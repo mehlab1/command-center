@@ -1,0 +1,44 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+**/serviceAccountKey*.json
+**/*firebase-adminsdk*.json
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+/frontend/.next/
+/frontend/out/
+/frontend/build/
+.vercel
+
+# Backend build
+/backend/dist/
+/backend/build/
+
+# Prisma
+/backend/prisma/*.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Testing
+/coverage/
+
+# Misc
+*.local
