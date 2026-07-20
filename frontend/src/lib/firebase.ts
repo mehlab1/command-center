@@ -14,17 +14,28 @@ function getFirebaseApp() {
   return getApps().length ? getApp() : initializeApp(firebaseConfig);
 }
 
+export class PushPermissionDeniedError extends Error {}
+
 // Soft opt-in only (docs/06-scheduling-and-notifications.md) — this is
 // called from an explicit "enable notifications" tap, never on page load.
 // Reuses the existing /sw.js registration rather than a separate
 // firebase-messaging-sw.js, so there's one service worker file to reason
 // about, not two.
-export async function requestPushToken(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  if (!(await isSupported())) return null;
+//
+// Deliberately lets any other failure (unsupported browser, getToken()
+// rejecting) propagate as a real thrown error with its own message rather
+// than collapsing everything to null — a silent null here is exactly what
+// made the original "failed to register device" report undiagnosable from
+// the UI alone.
+export async function requestPushToken(): Promise<string> {
+  if (typeof window === "undefined" || !(await isSupported())) {
+    throw new Error("This browser doesn't support web push notifications.");
+  }
 
   const permission = await Notification.requestPermission();
-  if (permission !== "granted") return null;
+  if (permission !== "granted") {
+    throw new PushPermissionDeniedError("Notification permission was denied.");
+  }
 
   const registration = await navigator.serviceWorker.ready;
   const messaging: Messaging = getMessaging(getFirebaseApp());
@@ -32,5 +43,8 @@ export async function requestPushToken(): Promise<string | null> {
     vapidKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     serviceWorkerRegistration: registration,
   });
-  return token || null;
+  if (!token) {
+    throw new Error("Firebase returned no token — the VAPID key or Firebase project config may be mismatched.");
+  }
+  return token;
 }

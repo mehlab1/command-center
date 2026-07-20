@@ -42,3 +42,6 @@ Thumbs.db
 
 # Misc
 *.local
+
+.vercel
+.env*

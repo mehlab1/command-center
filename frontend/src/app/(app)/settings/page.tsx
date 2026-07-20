@@ -10,24 +10,27 @@ import { requestPushToken } from "@/lib/firebase";
 import { ReminderDTO } from "@/lib/types";
 
 function NotificationOptIn() {
-  const [status, setStatus] = useState<"idle" | "requesting" | "enabled" | "denied" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "requesting" | "enabled" | "error">("idle");
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   async function handleEnable() {
     setStatus("requesting");
+    setErrorDetail(null);
     try {
       const token = await requestPushToken();
-      if (!token) {
-        setStatus("denied");
-        return;
-      }
       const res = await apiFetch("/api/push/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      setStatus(res.ok ? "enabled" : "error");
-    } catch {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Server rejected the token (${res.status}).`);
+      }
+      setStatus("enabled");
+    } catch (err) {
       setStatus("error");
+      setErrorDetail(err instanceof Error ? err.message : "Unknown error.");
     }
   }
 
@@ -44,10 +47,7 @@ function NotificationOptIn() {
       >
         {status === "enabled" ? "Enabled on this device" : status === "requesting" ? "Requesting…" : "Enable notifications"}
       </button>
-      {status === "denied" && (
-        <p className="text-xs text-blocked">Notification permission was denied — enable it in your browser settings.</p>
-      )}
-      {status === "error" && <p className="text-xs text-blocked">Couldn't register this device — try again.</p>}
+      {status === "error" && errorDetail && <p className="text-xs text-blocked">{errorDetail}</p>}
     </div>
   );
 }
