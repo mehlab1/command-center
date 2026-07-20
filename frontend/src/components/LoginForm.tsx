@@ -42,45 +42,47 @@ export function LoginForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm rounded-lg bg-surface-raised border border-border p-6 flex flex-col gap-4"
+      className="w-full max-w-sm rounded-lg bg-paper border border-line p-6 flex flex-col gap-4"
     >
       <div>
-        <h1 className="font-heading text-2xl font-semibold text-ink">Command Center</h1>
-        <p className="text-sm text-ink-muted mt-1">Log in to continue.</p>
+        <h1 className="font-heading text-2xl font-semibold text-text tracking-tight">
+          COMMAND CENTER
+        </h1>
+        <p className="text-sm text-text-muted mt-1">Log in to continue.</p>
       </div>
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink">Email</span>
+        <span className="text-sm font-medium text-text">Email</span>
         <input
           type="email"
           required
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="rounded-sm border border-border bg-surface px-3 py-2.5 text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent"
+          className="rounded-sm border border-line bg-ink px-3 py-2.5 text-base text-text outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:border-signal"
         />
       </label>
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink">Password</span>
+        <span className="text-sm font-medium text-text">Password</span>
         <input
           type="password"
           required
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="rounded-sm border border-border bg-surface px-3 py-2.5 text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent"
+          className="rounded-sm border border-line bg-ink px-3 py-2.5 text-base text-text outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:border-signal"
         />
       </label>
 
       {error && (
-        <p role="alert" className="text-sm text-status-blocked">
+        <p role="alert" className="text-sm text-blocked">
           {error}
         </p>
       )}
 
       {status === "waking" && (
-        <p role="status" className="text-sm text-ink-muted">
+        <p role="status" className="text-sm text-text-muted">
           Waking things up — this happens after a bit of inactivity, just a few more seconds.
         </p>
       )}
@@ -88,7 +90,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={isBusy}
-        className="rounded-sm bg-accent text-accent-contrast font-medium py-2.5 mt-2 outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised disabled:opacity-60"
+        className="btn-tactile btn-tactile-signal rounded-sm bg-signal text-signal-contrast font-semibold py-2.5 mt-2 outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:opacity-60"
       >
         {isBusy ? "Logging in…" : "Log in"}
       </button>

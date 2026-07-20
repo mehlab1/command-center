@@ -1,11 +1,19 @@
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import os
 
-ACCENT = (76, 79, 224, 255)  # --color-accent light value
-CONTRAST = (255, 255, 255, 255)  # --color-accent-contrast light value
+INK = (14, 17, 22, 255)  # --ink dark value (graphite background)
+SIGNAL = (232, 163, 61, 255)  # --signal (terminal amber)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "public", "icons")
 os.makedirs(OUT_DIR, exist_ok=True)
+
+
+def draw_bracket(draw, x, top, bottom, width, stroke, mirror: bool) -> None:
+    # One half of the signature "[ ]" bracket-tag mark.
+    tie = width if not mirror else -width
+    draw.line([x, top, x + tie, top], fill=SIGNAL, width=stroke)
+    draw.line([x, top, x, bottom], fill=SIGNAL, width=stroke)
+    draw.line([x, bottom, x + tie, bottom], fill=SIGNAL, width=stroke)
 
 
 def make_icon(size: int, maskable: bool, filename: str) -> None:
@@ -13,22 +21,19 @@ def make_icon(size: int, maskable: bool, filename: str) -> None:
     draw = ImageDraw.Draw(img)
 
     if maskable:
-        # Maskable icons need the safe zone filled edge-to-edge (no transparency
-        # at the corners), per the manifest maskable-icon spec.
-        draw.rectangle([0, 0, size, size], fill=ACCENT)
-        pad = size * 0.22
+        draw.rectangle([0, 0, size, size], fill=INK)
+        pad = size * 0.30
     else:
         radius = size * 0.22
-        draw.rounded_rectangle([0, 0, size, size], radius=radius, fill=ACCENT)
-        pad = size * 0.24
+        draw.rounded_rectangle([0, 0, size, size], radius=radius, fill=INK)
+        pad = size * 0.26
 
-    mark_box = [pad, pad, size - pad, size - pad]
-    stroke = max(2, int(size * 0.06))
-    draw.rounded_rectangle(mark_box, radius=size * 0.06, outline=CONTRAST, width=stroke)
+    stroke = max(2, round(size * 0.055))
+    tie_width = (size - 2 * pad) * 0.22
+    top, bottom = pad, size - pad
 
-    inset = pad + (size - 2 * pad) * 0.32
-    draw.line([inset, size / 2, size - inset, size / 2], fill=CONTRAST, width=stroke)
-    draw.line([size / 2, inset, size / 2, size - inset], fill=CONTRAST, width=stroke)
+    draw_bracket(draw, pad, top, bottom, tie_width, stroke, mirror=False)
+    draw_bracket(draw, size - pad, top, bottom, tie_width, stroke, mirror=True)
 
     img.save(os.path.join(OUT_DIR, filename))
 

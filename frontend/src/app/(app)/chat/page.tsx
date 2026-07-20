@@ -137,7 +137,7 @@ export default function ChatPage() {
     <div className="flex-1 flex flex-col">
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
         {loaded && messages.length === 0 && !pending && (
-          <p className="text-sm text-ink-muted text-center mt-8">
+          <p className="text-sm text-text-muted text-center mt-8">
             No messages yet — tell the agent about a project, dev, or pod to get started.
           </p>
         )}
@@ -153,7 +153,7 @@ export default function ChatPage() {
           />
         )}
         {waking && (
-          <p className="text-sm text-ink-muted text-center">
+          <p className="text-sm text-text-muted text-center">
             Waking things up — this happens after a bit of inactivity, just a few more seconds.
           </p>
         )}
@@ -162,7 +162,7 @@ export default function ChatPage() {
 
       <form
         onSubmit={handleSend}
-        className="sticky bottom-16 bg-surface border-t border-border px-3 py-2.5 flex gap-2"
+        className="sticky bottom-16 bg-ink border-t border-line px-3 py-2.5 flex gap-2"
       >
         <input
           type="text"
@@ -170,12 +170,12 @@ export default function ChatPage() {
           onChange={(e) => setInputValue(e.target.value)}
           placeholder="Message the agent…"
           disabled={sending || !!pending}
-          className="flex-1 rounded-sm border border-border bg-surface-raised px-3 py-2.5 text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent disabled:opacity-60"
+          className="flex-1 rounded-sm border border-line bg-paper px-3 py-2.5 text-base text-text outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:border-signal disabled:opacity-60"
         />
         <button
           type="submit"
           disabled={sending || !inputValue.trim() || !!pending}
-          className="rounded-sm bg-accent text-accent-contrast font-medium px-4 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+          className="btn-tactile btn-tactile-signal rounded-sm bg-signal text-signal-contrast font-semibold px-4 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-signal disabled:opacity-60"
         >
           Send
         </button>

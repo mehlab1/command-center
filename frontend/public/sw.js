@@ -2,7 +2,7 @@
 // Push subscription + notificationclick deep-linking is wired in Phase 6 —
 // this file establishes the registration so that phase is additive, not a retrofit.
 
-const CACHE_NAME = "command-center-shell-v1";
+const CACHE_NAME = "command-center-shell-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { StatusTag } from "@/components/StatusTag";
 
 interface AuditLogEntry {
   id: string;
@@ -26,16 +27,19 @@ export default function AuditLogPage() {
 
   return (
     <div className="flex-1 p-4">
-      <h1 className="font-heading text-xl text-ink mb-3">Audit log</h1>
-      {entries === null && <p className="text-sm text-ink-muted">Loading…</p>}
-      {entries?.length === 0 && <p className="text-sm text-ink-muted">No writes yet.</p>}
+      <h1 className="font-heading text-xl text-text mb-3">Audit log</h1>
+      {entries === null && <p className="text-sm text-text-muted">Loading…</p>}
+      {entries?.length === 0 && <p className="text-sm text-text-muted">No writes yet.</p>}
       <ul className="flex flex-col gap-2">
         {entries?.map((e) => (
-          <li key={e.id} className="rounded-md border border-border bg-surface-raised p-3">
-            <p className="text-xs text-ink-muted">
-              {new Date(e.createdAt).toLocaleString()} · {e.actionType} {e.entityType} · {e.source}
-            </p>
-            <p className="text-sm text-ink mt-1">{e.summary}</p>
+          <li key={e.id} className="rounded-md border border-line bg-paper p-3">
+            <div className="flex items-center gap-2">
+              <StatusTag kind={e.actionType} />
+              <p className="text-xs text-text-muted">
+                {e.entityType} · {e.source} · {new Date(e.createdAt).toLocaleString()}
+              </p>
+            </div>
+            <p className="text-sm text-text mt-1.5">{e.summary}</p>
           </li>
         ))}
       </ul>

@@ -22,30 +22,30 @@ export default function DashboardPlaceholder() {
   }
 
   if (!checked) {
-    return <main className="flex-1 flex items-center justify-center p-4 text-ink-muted">Loading…</main>;
+    return <main className="flex-1 flex items-center justify-center p-4 text-text-muted">Loading…</main>;
   }
 
   if (!email) {
     return (
-      <main className="flex-1 flex items-center justify-center p-4 text-ink-muted">
-        Not logged in. <a className="text-accent underline ml-1" href="/">Go to login</a>
+      <main className="flex-1 flex items-center justify-center p-4 text-text-muted">
+        Not logged in. <a className="text-signal underline ml-1" href="/">Go to login</a>
       </main>
     );
   }
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center gap-4 p-4">
-      <h1 className="font-heading text-xl text-ink">Logged in as {email}</h1>
-      <p className="text-sm text-ink-muted max-w-sm text-center">
+      <h1 className="font-heading text-xl text-text">Logged in as {email}</h1>
+      <p className="text-sm text-text-muted max-w-sm text-center">
         This is a placeholder — the real dashboard (projects, tasks, QA, vault) is built in
         Phase 4.
       </p>
-      <a href="/audit" className="text-sm text-accent underline">
+      <a href="/audit" className="text-sm text-signal underline">
         View audit log
       </a>
       <button
         onClick={handleLogout}
-        className="rounded-sm border border-border px-4 py-2 text-sm text-ink"
+        className="btn-tactile rounded-sm border border-line bg-paper px-4 py-2 text-sm text-text"
       >
         Log out
       </button>
