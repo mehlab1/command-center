@@ -21,7 +21,7 @@ const READ_TOOLS: LlmTool[] = [
 const WRITE_TOOLS: LlmTool[] = [
   {
     name: "create_project",
-    description: "Create a new project. Does not need confirmation from you to call this — the system handles confirming with the user before anything is written.",
+    description: "Create a brand-new project that doesn't exist yet. Do NOT use this if the user is changing something about a project that already exists — use edit_project for that, even if they only mention one field (e.g. 'push back the deadline on X' is edit_project, not create_project). Does not need confirmation from you to call this — the system handles confirming with the user before anything is written.",
     parameters: {
       type: "object",
       properties: {
@@ -63,7 +63,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "create_dev",
-    description: "Add a new dev.",
+    description: "Add a brand-new dev who doesn't exist yet. Do NOT use this if the user is changing something about a dev who already exists (e.g. 'change X's designation', 'X is now a permanent hire') — use edit_dev for that instead.",
     parameters: {
       type: "object",
       properties: {
@@ -77,7 +77,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "edit_dev",
-    description: "Edit an existing dev's fields (name/designation/employment type only — pod membership goes through reassign_dev_pod, lead status is computed).",
+    description: "Change a field on a dev who already exists (name/designation/employment type only — pod membership goes through reassign_dev_pod, lead status is computed). Use this whenever the user refers to an existing dev by name and wants something about them changed, even if they don't say the word 'edit'.",
     parameters: {
       type: "object",
       properties: {
@@ -110,7 +110,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "create_pod",
-    description: "Create a new pod with a lead dev. The lead dev must already exist.",
+    description: "Create a brand-new pod that doesn't exist yet, with a lead dev who must already exist. Do NOT use this to change an existing pod's name or lead — use edit_pod or reassign_pod_lead instead.",
     parameters: {
       type: "object",
       properties: { name: { type: "string" }, lead_dev_query: { type: "string" } },
@@ -145,7 +145,8 @@ export const SYSTEM_PROMPT = `You are the agent inside FinovaSolutions Command C
 
 Rules you must follow exactly:
 - You never write to the database yourself. When the user wants to create, edit, or delete something, call the appropriate tool once with the fields you're confident about — the system will resolve names, ask for anything missing, show a plain-language confirmation, and only write after the user explicitly confirms. You do not need to ask "are you sure?" yourself — that's handled after your tool call.
-- If a name mentioned (a dev, project, or pod) is ambiguous or unclear, prefer letting the system's resolution handle it — just pass through the name as the user said it (e.g. "project_query": "the marketing site").
+- Never confuse creating something new with changing something that already exists. If the user names an existing dev/project/pod and wants a detail about them changed (designation, deadline, name, status — anything), that is always an edit_*/reassign_* call, never a create_* call, even if they don't use the word "edit" (e.g. "Ehsan's designation is now Senior Engineer" means edit_dev, not create_dev). Only call a create_* tool when the user is clearly introducing something that doesn't exist yet.
+- If a name mentioned (a dev, project, or pod) is ambiguous or unclear, prefer letting the system's resolution handle it — just pass through the name as the user said it (e.g. "project_query": "the marketing site"). Never invent or guess a fuller/different name than what the user actually said.
 - If required information for a tool is genuinely missing from the conversation (not a name to resolve, but a real missing field like employment_type), ask the user directly in plain text instead of guessing.
 - Keep replies short and plain. No markdown headers, no bullet-point walls, sentence case.
 - If the user pastes something that looks like a secret/credential/API key, do not include it in any tool call — tell them the Vault has a secure entry path for that instead (not available yet in this phase).`;
