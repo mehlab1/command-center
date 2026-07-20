@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.finovasolutions.commandcenter",
+      "sha256_cert_fingerprints": [
+        "3A:69:CB:F9:05:AB:7F:7C:BD:60:B1:AA:61:A7:28:27:36:9F:9E:DB:8B:E1:11:8E:5B:FB:DA:42:39:28:0B:6A"
+      ]
+    }
+  }
+]
