@@ -7,6 +7,8 @@ import { ALL_TOOLS, READ_TOOL_NAMES, SYSTEM_PROMPT, WRITE_TOOL_NAMES } from "./t
 import { WRITE_PREPARERS, PrepareResult } from "./writeHandlers";
 import { executeWrite } from "./execute";
 import { APP_TIMEZONE, APP_UTC_OFFSET } from "../lib/dateFormat";
+import { containsSecretLikeToken, mentionsVaultContext } from "../lib/secretDetection";
+import { findItemAwaitingSecret } from "../services/vaultService";
 
 const MAX_ITERATIONS = 4;
 const HISTORY_WINDOW = 20;
@@ -73,7 +75,7 @@ async function executeReadTool(name: string, args: Record<string, unknown>): Pro
 // message (e.g. "Dave: is he permanent or an intern?").
 function labelForCall(call: LlmToolCall): string {
   const args = call.args;
-  for (const key of ["name", "title", "dev_query", "task_query", "project_query", "pod_query"]) {
+  for (const key of ["name", "title", "dev_query", "task_query", "project_query", "pod_query", "vault_item_query"]) {
     const value = args[key];
     if (typeof value === "string" && value) return value;
   }
@@ -158,8 +160,32 @@ async function handleWriteBatch(calls: LlmToolCall[]): Promise<OrchestratorResul
   return { type: "confirm", message: displaySummary, pendingActionId: pendingRow.id };
 }
 
+// Never let a pasted secret reach the LLM prompt at all — checked before
+// anything else, so a matching message short-circuits straight to a redirect
+// reply and never becomes a tool-call argument (docs/05-vault-and-security.md).
+async function checkSecretPasteRedirect(content: string): Promise<string | undefined> {
+  if (!containsSecretLikeToken(content)) return undefined;
+
+  if (mentionsVaultContext(content)) {
+    return "That looks like it might contain an actual secret value — I won't send that through chat. Create or open the vault entry for it, then use the \"Add secret value\" widget to enter it securely — that's the only path the real value ever takes.";
+  }
+
+  const awaiting = await findItemAwaitingSecret();
+  if (awaiting) {
+    return `That looks like it might contain an actual secret value — I won't send that through chat. Open "${awaiting.name}" in the Vault and use "Add secret value" to enter it securely.`;
+  }
+
+  return undefined;
+}
+
 export async function handleUserMessage(content: string): Promise<OrchestratorResult> {
   await saveMessage(ChatRole.USER, content);
+
+  const redirect = await checkSecretPasteRedirect(content);
+  if (redirect) {
+    await saveMessage(ChatRole.AGENT, redirect);
+    return { type: "message", message: redirect };
+  }
 
   const history = await recentHistoryAsLlmMessages();
   const now = new Date();

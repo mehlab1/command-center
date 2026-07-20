@@ -96,3 +96,16 @@ export interface DevPerformanceDTO {
   onTimePercent: number | null;
   history: { rating: number; onTime: boolean; createdAt: string; taskTitle: string }[];
 }
+
+export interface VaultItemDTO {
+  id: string;
+  name: string;
+  folder: string | null;
+  tags: string[];
+  notes: string | null;
+  hasSecret: boolean;
+  fileName: string | null;
+  fileMimeType: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

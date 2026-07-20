@@ -6,6 +6,7 @@ import * as projectService from "../services/projectService";
 import * as taskService from "../services/taskService";
 import * as qaService from "../services/qaService";
 import * as ratingService from "../services/ratingService";
+import * as vaultService from "../services/vaultService";
 
 // Runs only after the user has explicitly confirmed — this is the single
 // place a write tool's resolved args actually touch the database.
@@ -291,6 +292,64 @@ export async function executeWrite(
         source: AuditSource.CHAT,
       });
       return { entityType: "ratings_history", entityId: taskId };
+    }
+
+    case "create_vault_item_metadata": {
+      const item = await vaultService.createVaultItemMetadata({
+        name: args.name as string,
+        folder: args.folder as string | undefined,
+        tags: args.tags as string[] | undefined,
+        notes: args.notes as string | undefined,
+      });
+      await recordAudit({
+        actionType: AuditActionType.CREATE,
+        entityType: "vault_item",
+        entityId: item.id,
+        summary,
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "vault_item", entityId: item.id };
+    }
+
+    case "edit_vault_item_metadata": {
+      const id = args.id as string;
+      // Metadata-only diff, per docs/05-vault-and-security.md — this tool
+      // never touches secretValueEncrypted/fileBytesEncrypted, so "before"
+      // here can never contain a secret value, only name/folder/tags/notes.
+      const before = await vaultService.getVaultItemMetadata(id);
+      const item = await vaultService.editVaultItemMetadata(id, {
+        name: args.name as string | undefined,
+        folder: args.folder as string | undefined,
+        tags: args.tags as string[] | undefined,
+        notes: args.notes as string | undefined,
+      });
+      const after = await vaultService.getVaultItemMetadata(id);
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "vault_item",
+        entityId: item.id,
+        summary,
+        diff: { before, after },
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "vault_item", entityId: item.id };
+    }
+
+    case "delete_vault_item": {
+      const id = args.id as string;
+      const before = await vaultService.getVaultItemMetadata(id);
+      await vaultService.deleteVaultItem(id);
+      await recordAudit({
+        actionType: AuditActionType.DELETE,
+        entityType: "vault_item",
+        entityId: id,
+        summary,
+        // before is already the sanitized metadata-only view (hasSecret
+        // boolean, never the value) from vaultService.getVaultItemMetadata.
+        diff: { before },
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "vault_item", entityId: id };
     }
 
     default:

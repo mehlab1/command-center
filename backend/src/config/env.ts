@@ -19,4 +19,8 @@ export const env = {
   geminiModel: process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   groqModel: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b",
+
+  // Vault (docs/05-vault-and-security.md) — AES-256-GCM key, base64 of 32
+  // raw bytes, generated with `openssl rand -base64 32`. Never in git/DB.
+  vaultEncryptionKey: required("VAULT_ENCRYPTION_KEY"),
 };

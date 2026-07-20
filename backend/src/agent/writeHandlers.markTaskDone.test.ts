@@ -15,6 +15,7 @@ jest.mock("../services/ratingService", () => ({
   assertRatable: jest.fn(),
   NotRatableError: class NotRatableError extends Error {},
 }));
+jest.mock("../services/vaultService", () => ({ getVaultItemById: jest.fn() }));
 
 // PendingClarification state (schema.prisma) — models "did the system
 // actually ask this, and hasn't gotten an answer yet" so a boolean the LLM

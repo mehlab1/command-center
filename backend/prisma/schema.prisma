@@ -201,14 +201,30 @@ model RatingsHistory {
   @@map("ratings_history")
 }
 
+// Deviates from docs/01-data-model.md in two ways, both required by the
+// LLM-bypass mechanism in docs/05-vault-and-security.md:
+// 1. secretValueEncrypted is nullable — metadata is created first via chat
+//    (confirm-before-commit, like every other entity), and the secret value
+//    is attached afterward through the dedicated widget/endpoint. A row with
+//    a null value is simply "awaiting its secret."
+// 2. file_attachment_url (a URL string) doesn't fit the doc's own storage
+//    decision to keep encrypted file bytes directly in Postgres rather than
+//    a second file-storage provider — replaced with fileName/fileMimeType/
+//    fileBytesEncrypted so there's no external URL to point at.
+// Each Bytes column holds a single self-describing blob: 12-byte IV +
+// 16-byte auth tag + ciphertext, concatenated (see lib/vaultCrypto.ts) —
+// avoids extra iv/tag columns per the doc's "document whichever you choose"
+// allowance.
 model VaultItem {
   id                   String   @id @default(uuid())
   name                 String
   folder               String?
   tags                 String[]
-  secretValueEncrypted Bytes    @map("secret_value_encrypted")
+  secretValueEncrypted Bytes?   @map("secret_value_encrypted")
   notes                String?
-  fileAttachmentUrl    String?  @map("file_attachment_url")
+  fileName             String?  @map("file_name")
+  fileMimeType         String?  @map("file_mime_type")
+  fileBytesEncrypted   Bytes?   @map("file_bytes_encrypted")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 

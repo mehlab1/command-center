@@ -1,6 +1,6 @@
 import { prisma } from "../lib/prisma";
 
-export type EntityType = "dev" | "pod" | "project" | "task";
+export type EntityType = "dev" | "pod" | "project" | "task" | "vault_item";
 
 export interface ResolutionCandidate {
   id: string;
@@ -19,6 +19,7 @@ const TABLE_COLUMN: Record<EntityType, { table: string; column: string }> = {
   pod: { table: "pods", column: "name" },
   project: { table: "projects", column: "name" },
   task: { table: "tasks", column: "title" },
+  vault_item: { table: "vault_items", column: "name" },
 };
 
 // exact -> case-insensitive -> substring ("Nadia" in "Nadia Iqbal") ->

@@ -42,6 +42,11 @@ jest.mock("./disambiguation", () => ({
 const executeWrite = jest.fn();
 jest.mock("./execute", () => ({ executeWrite: (...args: unknown[]) => executeWrite(...args) }));
 
+const findItemAwaitingSecret = jest.fn();
+jest.mock("../services/vaultService", () => ({
+  findItemAwaitingSecret: (...args: unknown[]) => findItemAwaitingSecret(...args),
+}));
+
 import { handleUserMessage, confirmPendingAction, cancelPendingAction } from "./orchestrator";
 
 let pendingActionIdCounter = 0;
@@ -55,6 +60,7 @@ beforeEach(() => {
   }));
   pendingActionFindFirst.mockResolvedValue(null);
   batchQueueFindFirst.mockResolvedValue(null);
+  findItemAwaitingSecret.mockResolvedValue(null);
 });
 
 describe("handleUserMessage — write tool with all fields resolved", () => {
@@ -144,6 +150,48 @@ describe("handleUserMessage — multiple entities described in one message", () 
     // Nothing queued yet — the whole batch waits until every item resolves.
     expect(pendingActionCreate).not.toHaveBeenCalled();
     expect(batchQueueCreateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleUserMessage — vault secret chat redirect", () => {
+  it("redirects instead of calling the LLM when a message mentions vault context and contains a secret-shaped token", async () => {
+    const result = await handleUserMessage("here's the api key for it: sk-abcDEF123456!!zzTop9000");
+
+    expect(result.type).toBe("message");
+    if (result.type === "message") {
+      expect(result.message.toLowerCase()).toContain("secure");
+    }
+    expect(llmChat).not.toHaveBeenCalled();
+  });
+
+  it("redirects a bare high-entropy paste with no keywords when a vault item is awaiting its secret", async () => {
+    findItemAwaitingSecret.mockResolvedValueOnce({ id: "vault-1", name: "AWS root" });
+
+    const result = await handleUserMessage("sk-abcDEF123456!!zzTop9000");
+
+    expect(result.type).toBe("message");
+    if (result.type === "message") {
+      expect(result.message).toContain("AWS root");
+    }
+    expect(llmChat).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect an ordinary message with no secret-shaped token", async () => {
+    llmChat.mockResolvedValueOnce({ provider: "gemini", toolCalls: [], content: "Sure thing." });
+
+    const result = await handleUserMessage("what's the deadline on the marketing site project?");
+
+    expect(llmChat).toHaveBeenCalledTimes(1);
+    expect(result.type).toBe("message");
+  });
+
+  it("does not redirect a long token with no vault context and no item awaiting secret", async () => {
+    llmChat.mockResolvedValueOnce({ provider: "gemini", toolCalls: [], content: "Got it." });
+
+    const result = await handleUserMessage("the commit hash is a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0");
+
+    expect(llmChat).toHaveBeenCalledTimes(1);
+    expect(result.type).toBe("message");
   });
 });
 

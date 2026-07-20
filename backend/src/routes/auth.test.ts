@@ -7,6 +7,7 @@ jest.mock("../lib/prisma", () => ({
 }));
 
 process.env.JWT_SECRET = "test-secret";
+process.env.VAULT_ENCRYPTION_KEY = "laU4ED0ckoRFTzhg9zBTdT2CuATiY7aQhHd8l3eKAtg=";
 
 import { createApp } from "../app";
 import { prisma } from "../lib/prisma";

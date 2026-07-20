@@ -4,6 +4,7 @@ import { checkDeleteProject } from "../services/projectService";
 import { getPodLedBy } from "../services/podService";
 import { getTaskById } from "../services/taskService";
 import { assertRatable, NotRatableError } from "../services/ratingService";
+import { getVaultItemById } from "../services/vaultService";
 import { prisma } from "../lib/prisma";
 import { formatDeadline } from "../lib/dateFormat";
 
@@ -577,6 +578,77 @@ async function getDevNameOrFallback(devId: string): Promise<string> {
   return dev?.name ?? "that dev";
 }
 
+function cleanTags(tags: unknown): string[] | undefined {
+  if (!Array.isArray(tags)) return undefined;
+  return (tags as string[]).filter(Boolean);
+}
+
+export async function prepareCreateVaultItemMetadata(args: Record<string, unknown>): Promise<PrepareResult> {
+  const name = args.name as string | undefined;
+  if (!name) return { status: "need_field", message: "What should this vault entry be called?" };
+
+  const folder = args.folder as string | undefined;
+  const tags = cleanTags(args.tags);
+  const notes = args.notes as string | undefined;
+
+  const summary = `Add vault entry "${name}"${folder ? ` (${folder})` : ""}. You'll enter the actual secret value next, through the secure widget.`;
+  return {
+    status: "ready",
+    resolvedArgs: { name, folder, tags, notes },
+    summary,
+  };
+}
+
+export async function prepareEditVaultItemMetadata(args: Record<string, unknown>): Promise<PrepareResult> {
+  const query = args.vault_item_query as string | undefined;
+  if (!query) return { status: "need_field", message: "Which vault entry do you want to edit?" };
+
+  const resolved = await resolveOrNull(query, "vault_item", "vault item");
+  if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
+  if (!resolved) return { status: "unresolved", message: "Which vault entry do you want to edit?" };
+
+  const tags = cleanTags(args.tags);
+  const changes: string[] = [];
+  if (args.name) changes.push(`name → "${args.name}"`);
+  if (args.folder) changes.push(`folder → "${args.folder}"`);
+  if (tags) changes.push(`tags → ${tags.join(", ")}`);
+  if (args.notes) changes.push("notes updated");
+
+  if (changes.length === 0) {
+    return { status: "need_field", message: "What would you like to change on that vault entry?" };
+  }
+
+  return {
+    status: "ready",
+    resolvedArgs: {
+      id: resolved.id,
+      name: args.name,
+      folder: args.folder,
+      tags,
+      notes: args.notes,
+    },
+    summary: `Edit vault entry "${resolved.name}": ${changes.join(", ")}.`,
+  };
+}
+
+export async function prepareDeleteVaultItem(args: Record<string, unknown>): Promise<PrepareResult> {
+  const query = args.vault_item_query as string | undefined;
+  if (!query) return { status: "need_field", message: "Which vault entry do you want to delete?" };
+
+  const resolved = await resolveOrNull(query, "vault_item", "vault item");
+  if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
+  if (!resolved) return { status: "unresolved", message: "Which vault entry do you want to delete?" };
+
+  const item = await getVaultItemById(resolved.id);
+  const extra = item?.fileName ? " and its file attachment" : "";
+
+  return {
+    status: "ready",
+    resolvedArgs: { id: resolved.id },
+    summary: `Delete vault entry "${resolved.name}"${extra}.`,
+  };
+}
+
 export const WRITE_PREPARERS: Record<string, (args: Record<string, unknown>) => Promise<PrepareResult>> = {
   create_project: prepareCreateProject,
   edit_project: prepareEditProject,
@@ -595,4 +667,7 @@ export const WRITE_PREPARERS: Record<string, (args: Record<string, unknown>) => 
   assign_qa_reviewer: prepareAssignQaReviewer,
   resolve_qa_entry: prepareResolveQaEntry,
   rate_task: prepareRateTask,
+  create_vault_item_metadata: prepareCreateVaultItemMetadata,
+  edit_vault_item_metadata: prepareEditVaultItemMetadata,
+  delete_vault_item: prepareDeleteVaultItem,
 };

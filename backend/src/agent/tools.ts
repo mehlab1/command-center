@@ -21,6 +21,11 @@ const READ_TOOLS: LlmTool[] = [
     description: "Look up an existing task by title (fuzzy match).",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
+  {
+    name: "search_vault_item",
+    description: "Look up an existing vault item by name (fuzzy match).",
+    parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+  },
 ];
 
 const WRITE_TOOLS: LlmTool[] = [
@@ -234,6 +239,44 @@ const WRITE_TOOLS: LlmTool[] = [
       required: ["task_query"],
     },
   },
+  {
+    name: "create_vault_item_metadata",
+    description: "Create a new vault entry's METADATA ONLY — name, folder, tags, and non-sensitive notes. This tool has no field for the actual secret value/password/API key/credential and never will — that is entered separately through a secure widget the frontend shows after this is confirmed, completely outside the chat/LLM path. Never put a real secret value into `notes` either, even if the user pastes one right after asking to create a vault item — notes is for non-sensitive context only (e.g. 'expires yearly in March', 'used for the client portal'). If the user's message contains what looks like the actual secret, ignore that part when calling this tool; the system will prompt them to enter it securely.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        folder: { type: "string", description: "Broad category, e.g. 'Cloud', 'Client Logins', 'Personal'" },
+        tags: { type: "array", items: { type: "string" } },
+        notes: { type: "string", description: "Non-sensitive context only — never the secret value itself" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "edit_vault_item_metadata",
+    description: "Edit an existing vault item's metadata (name, folder, tags, notes) only — same no-secret-value rule as create_vault_item_metadata. To change the actual secret value, tell the user to use the secure widget; there is no tool for that.",
+    parameters: {
+      type: "object",
+      properties: {
+        vault_item_query: { type: "string" },
+        name: { type: "string" },
+        folder: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        notes: { type: "string", description: "Non-sensitive context only — never the secret value itself" },
+      },
+      required: ["vault_item_query"],
+    },
+  },
+  {
+    name: "delete_vault_item",
+    description: "Delete a vault item, including its stored secret value and any file attachment.",
+    parameters: {
+      type: "object",
+      properties: { vault_item_query: { type: "string" } },
+      required: ["vault_item_query"],
+    },
+  },
 ];
 
 export const ALL_TOOLS: LlmTool[] = [...READ_TOOLS, ...WRITE_TOOLS];
@@ -249,5 +292,5 @@ Rules you must follow exactly:
 - If required information for a tool is genuinely missing from the conversation (not a name to resolve, but a real missing field like employment_type), ask the user directly in plain text instead of guessing.
 - Never invent a plausible-looking value (a date, a number, a name, an enum choice like PERMANENT/INTERN) for a field the user did not actually state, even if it would make the tool call "complete," even if it's the statistically common answer, and even if a nearby item in the same message happened to have that value. "This is probably what they meant" is still guessing. Omit that field from the call entirely — the system will notice it's missing and ask for it. This matters most for dates: if the user gives a relative date for one field (e.g. a deadline) but not another (e.g. a revised deadline on a blocked task), do not reuse, estimate, or extrapolate a date for the field they didn't mention.
 - Keep replies short and plain. No markdown headers, no bullet-point walls, sentence case.
-- If the user pastes something that looks like a secret/credential/API key, do not include it in any tool call — tell them the Vault has a secure entry path for that instead (not available yet in this phase).
+- If the user pastes something that looks like a secret/credential/API key, do not include it in any tool call, including as a "notes" field — tell them to use the Vault's secure entry widget for that instead. Vault metadata (name/folder/tags/notes) goes through create_vault_item_metadata/edit_vault_item_metadata like any other entity; the actual secret value never goes through you or any tool call, ever.
 - There is no edit_task tool, ever — this is deliberate, not missing. If the user wants to change a task's title, deadline, assignees, or description, the correct flow is delete_task then a fresh create_task, and you should say so plainly rather than looking for an edit tool that doesn't exist. Status changes (blocked/done) go through mark_task_blocked/mark_task_done, which are not edits in this sense.`;

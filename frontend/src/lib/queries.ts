@@ -8,6 +8,7 @@ import {
   ProjectDTO,
   QaEntryDTO,
   TaskDTO,
+  VaultItemDTO,
 } from "./types";
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -47,5 +48,17 @@ export function usePerformance() {
   return useQuery({
     queryKey: ["dashboard", "performance"],
     queryFn: () => fetchJson<DevPerformanceDTO[]>("/api/dashboard/performance"),
+  });
+}
+
+export function useVaultItems(filter: { folder?: string; tag?: string; q?: string } = {}) {
+  const params = new URLSearchParams();
+  if (filter.folder) params.set("folder", filter.folder);
+  if (filter.tag) params.set("tag", filter.tag);
+  if (filter.q) params.set("q", filter.q);
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ["vault", filter],
+    queryFn: () => fetchJson<VaultItemDTO[]>(`/api/vault${qs ? `?${qs}` : ""}`),
   });
 }
