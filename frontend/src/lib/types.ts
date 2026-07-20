@@ -97,6 +97,22 @@ export interface DevPerformanceDTO {
   history: { rating: number; onTime: boolean; createdAt: string; taskTitle: string }[];
 }
 
+export interface SettingsDTO {
+  dailyDigestTime: string;
+  whatsappNumber: string | null;
+}
+
+export type ReminderOccurrenceStatus = "SCHEDULED" | "SENT" | "CANCELLED";
+
+export interface ReminderDTO {
+  id: string;
+  message: string;
+  channel: "PUSH" | "WHATSAPP";
+  linkedTaskId: string | null;
+  linkedProjectId: string | null;
+  occurrences: { id: string; fireTime: string; status: ReminderOccurrenceStatus }[];
+}
+
 export interface VaultItemDTO {
   id: string;
   name: string;

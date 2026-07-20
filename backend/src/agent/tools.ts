@@ -194,12 +194,13 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "mark_task_done",
-    description: "Mark a task done. If it's being completed after its deadline, the system will ask whether that should count as a missed deadline before confirming — you don't need to ask this yourself, just call the tool.",
+    description: "Mark a task done. If it's being completed after its deadline, the system will ask whether that should count as a missed deadline before confirming. If the task has upcoming scheduled reminders, the system separately asks whether to cancel them too. You don't need to ask either of these yourself, just call the tool — the system asks one at a time and re-prompts as needed.",
     parameters: {
       type: "object",
       properties: {
         task_query: { type: "string" },
         missed_deadline: { type: "boolean", description: "Only include this if the user has already answered the missed-deadline question in this conversation" },
+        cancel_reminders: { type: "boolean", description: "Only include this if the user has already answered the 'cancel upcoming reminders on this task too?' question in this conversation" },
       },
       required: ["task_query"],
     },
@@ -275,6 +276,48 @@ const WRITE_TOOLS: LlmTool[] = [
       type: "object",
       properties: { vault_item_query: { type: "string" } },
       required: ["vault_item_query"],
+    },
+  },
+  {
+    name: "create_reminder",
+    description: "Create a reminder — standalone (no task/project link) or linked to an existing task/project. Give the fire time in exactly ONE of three ways: a single `fire_time`; `fire_time` plus `recurring_interval_days` and `recurring_count` for an evenly-spaced recurring reminder (fire_time is the FIRST occurrence); or an explicit `fire_times` list for irregular dates. Never combine more than one of these — pick the one that matches what the user actually said.",
+    parameters: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "What the reminder says. Required for a standalone reminder. For a linked reminder, only set this if the user actually said specific wording — otherwise omit it and the system generates one from the linked task/project." },
+        task_query: { type: "string", description: "Link this reminder to an existing task, if the user said one" },
+        project_query: { type: "string", description: "Link this reminder to an existing project, if the user said one" },
+        channel: { type: "string", enum: ["PUSH", "WHATSAPP"], description: "Only set this if the user actually asked for WhatsApp — PUSH is the system default and doesn't need to be stated." },
+        fire_time: { type: "string", description: "ISO 8601 datetime — a single occurrence, or the first occurrence if recurring_interval_days/recurring_count are also set" },
+        recurring_interval_days: { type: "integer", description: "Days between occurrences — only with recurring_count and fire_time" },
+        recurring_count: { type: "integer", description: "Total number of occurrences — only with recurring_interval_days and fire_time" },
+        fire_times: { type: "array", items: { type: "string" }, description: "Explicit list of ISO 8601 datetimes for irregular reminder dates — don't combine with fire_time/recurring fields" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "cancel_reminder",
+    description: "Cancel reminders — either every still-scheduled reminder linked to a specific task (task_query), or a specific standalone/linked reminder matched by wording (reminder_query, fuzzy match against the reminder's message). Give exactly one of these.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_query: { type: "string", description: "Cancels every upcoming reminder linked to this task" },
+        reminder_query: { type: "string", description: "Free text matched against a reminder's message, e.g. 'my Friday reminder about the report'" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "update_setting",
+    description: "Change an app setting. Only two settings are editable this way: the daily digest time and the WhatsApp reminder number.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", enum: ["daily_digest_time", "whatsapp_number"] },
+        value: { type: "string", description: "For daily_digest_time: 24-hour HH:mm, e.g. '08:00'. For whatsapp_number: digits with country code, e.g. '923001234567'." },
+      },
+      required: ["key", "value"],
     },
   },
 ];

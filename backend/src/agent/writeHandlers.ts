@@ -5,6 +5,8 @@ import { getPodLedBy } from "../services/podService";
 import { getTaskById } from "../services/taskService";
 import { assertRatable, NotRatableError } from "../services/ratingService";
 import { getVaultItemById } from "../services/vaultService";
+import { listScheduledOccurrencesForTask, findCancellableRemindersByQuery } from "../services/reminderService";
+import { isValidDigestTime, isValidWhatsAppNumber } from "../services/settingsService";
 import { prisma } from "../lib/prisma";
 import { formatDeadline } from "../lib/dateFormat";
 
@@ -429,33 +431,51 @@ export async function prepareMarkTaskDone(args: Record<string, unknown>): Promis
   if (!task) return { status: "unresolved", message: "Which task is done?" };
 
   const isLate = new Date() > task.deadline;
-  if (!isLate) {
-    return {
-      status: "ready",
-      resolvedArgs: { id: task.id, missedDeadline: false },
-      summary: `Mark "${task.title}" done (on time).`,
-    };
+  let missedDeadline = false;
+  let deadlineNote = "on time";
+
+  if (isLate) {
+    // Deterministic guard, not just a tool-description request: only trust a
+    // missed_deadline value if the system actually asked this question for
+    // THIS task and hasn't gotten an answer yet — otherwise the model can
+    // pattern-match a boolean from an unrelated prior exchange in history and
+    // skip asking (observed in testing). docs/03-agent-and-llm.md: never left
+    // to LLM judgment alone.
+    const wasAsked = await consumePendingClarification(task.id, "missed_deadline");
+    if (typeof args.missed_deadline !== "boolean" || !wasAsked) {
+      await setPendingClarification(task.id, "missed_deadline");
+      return {
+        status: "need_field",
+        message: "This was completed after the deadline — should this count as a missed deadline?",
+      };
+    }
+    missedDeadline = args.missed_deadline;
+    deadlineNote = `completed after deadline; missed deadline: ${missedDeadline ? "yes" : "no"}`;
   }
 
-  // Deterministic guard, not just a tool-description request: only trust a
-  // missed_deadline value if the system actually asked this question for
-  // THIS task and hasn't gotten an answer yet — otherwise the model can
-  // pattern-match a boolean from an unrelated prior exchange in history and
-  // skip asking (observed in testing). docs/03-agent-and-llm.md: never left
-  // to LLM judgment alone.
-  const wasAsked = await consumePendingClarification(task.id, "missed_deadline");
-  if (typeof args.missed_deadline !== "boolean" || !wasAsked) {
-    await setPendingClarification(task.id, "missed_deadline");
-    return {
-      status: "need_field",
-      message: "This was completed after the deadline — should this count as a missed deadline?",
-    };
+  // Checked only once missed_deadline has resolved either way, so the two
+  // questions are asked one at a time rather than both at once
+  // (docs/04-workflows.md "task completion interaction").
+  const upcoming = await listScheduledOccurrencesForTask(task.id);
+  let cancelReminders: boolean | undefined;
+  if (upcoming.length > 0) {
+    const remindersWereAsked = await consumePendingClarification(task.id, "cancel_reminders");
+    if (typeof args.cancel_reminders !== "boolean" || !remindersWereAsked) {
+      await setPendingClarification(task.id, "cancel_reminders");
+      return {
+        status: "need_field",
+        message: `This task has ${upcoming.length} upcoming reminder${upcoming.length === 1 ? "" : "s"} — cancel ${upcoming.length === 1 ? "it" : "those"} too?`,
+      };
+    }
+    cancelReminders = args.cancel_reminders;
   }
+
+  const summary = `Mark "${task.title}" done (${deadlineNote})${cancelReminders ? ", cancelling its upcoming reminders" : ""}.`;
 
   return {
     status: "ready",
-    resolvedArgs: { id: task.id, missedDeadline: args.missed_deadline },
-    summary: `Mark "${task.title}" done (completed after deadline; missed deadline: ${args.missed_deadline ? "yes" : "no"}).`,
+    resolvedArgs: { id: task.id, missedDeadline, cancelReminders },
+    summary,
   };
 }
 
@@ -649,6 +669,153 @@ export async function prepareDeleteVaultItem(args: Record<string, unknown>): Pro
   };
 }
 
+const MAX_RECURRING_COUNT = 52;
+
+export async function prepareCreateReminder(args: Record<string, unknown>): Promise<PrepareResult> {
+  const taskQuery = args.task_query as string | undefined;
+  const projectQuery = args.project_query as string | undefined;
+
+  let linkedTask: { id: string; name: string } | undefined;
+  if (taskQuery) {
+    const resolved = await resolveOrNull(taskQuery, "task", "task");
+    if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
+    if (!resolved) return { status: "unresolved", message: "Which task should this be linked to?" };
+    linkedTask = resolved;
+  }
+
+  let linkedProject: { id: string; name: string } | undefined;
+  if (projectQuery) {
+    const resolved = await resolveOrNull(projectQuery, "project", "project");
+    if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
+    if (!resolved) return { status: "unresolved", message: "Which project should this be linked to?" };
+    linkedProject = resolved;
+  }
+
+  const isStandalone = !linkedTask && !linkedProject;
+  let message = args.message as string | undefined;
+  if (!message) {
+    if (isStandalone) return { status: "need_field", message: "What should the reminder say?" };
+    message = `Reminder: ${linkedTask ? linkedTask.name : linkedProject!.name}`;
+  }
+
+  const channelRaw = args.channel as string | undefined;
+  if (channelRaw && channelRaw !== "PUSH" && channelRaw !== "WHATSAPP") {
+    return { status: "need_field", message: "Should this go via push or WhatsApp?" };
+  }
+  const channel = channelRaw === "WHATSAPP" ? "WHATSAPP" : "PUSH";
+
+  const explicitList = Array.isArray(args.fire_times) ? (args.fire_times as string[]).filter(Boolean) : [];
+  const fireTimeRaw = args.fire_time as string | undefined;
+  const intervalDays = args.recurring_interval_days as number | undefined;
+  const count = args.recurring_count as number | undefined;
+
+  let fireTimes: Date[];
+  let cadenceNote = "";
+  if (explicitList.length > 0) {
+    fireTimes = explicitList.map((s) => new Date(s));
+  } else if (fireTimeRaw && intervalDays && count) {
+    if (count < 1 || count > MAX_RECURRING_COUNT) {
+      return { status: "need_field", message: `How many occurrences (1–${MAX_RECURRING_COUNT})?` };
+    }
+    const base = new Date(fireTimeRaw);
+    fireTimes = Array.from(
+      { length: count },
+      (_, i) => new Date(base.getTime() + i * intervalDays * 24 * 60 * 60 * 1000)
+    );
+    cadenceNote = `, every ${intervalDays} day${intervalDays === 1 ? "" : "s"}`;
+  } else if (fireTimeRaw) {
+    fireTimes = [new Date(fireTimeRaw)];
+  } else {
+    return { status: "need_field", message: "When should this fire?" };
+  }
+
+  if (fireTimes.length === 0 || fireTimes.some((d) => Number.isNaN(d.getTime()))) {
+    return { status: "need_field", message: "When should this fire?" };
+  }
+
+  const linkDesc = linkedTask ? ` on "${linkedTask.name}"` : linkedProject ? ` on "${linkedProject.name}"` : "";
+  const timesDesc =
+    fireTimes.length === 1
+      ? formatDeadline(fireTimes[0])
+      : `${fireTimes.length} times, starting ${formatDeadline(fireTimes[0])}${cadenceNote}`;
+
+  return {
+    status: "ready",
+    resolvedArgs: {
+      message,
+      linkedTaskId: linkedTask?.id,
+      linkedProjectId: linkedProject?.id,
+      channel,
+      fireTimes: fireTimes.map((d) => d.toISOString()),
+    },
+    summary: `Create reminder${linkDesc}: "${message}" — ${timesDesc}${channel === "WHATSAPP" ? " via WhatsApp" : ""}.`,
+  };
+}
+
+export async function prepareCancelReminder(args: Record<string, unknown>): Promise<PrepareResult> {
+  const taskQuery = args.task_query as string | undefined;
+  const reminderQuery = args.reminder_query as string | undefined;
+
+  if (taskQuery) {
+    const resolved = await resolveOrNull(taskQuery, "task", "task");
+    if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
+    if (!resolved) return { status: "unresolved", message: "Which task's reminders do you want to cancel?" };
+
+    const upcoming = await listScheduledOccurrencesForTask(resolved.id);
+    if (upcoming.length === 0) {
+      return { status: "unresolved", message: `"${resolved.name}" has no upcoming reminders to cancel.` };
+    }
+
+    return {
+      status: "ready",
+      resolvedArgs: { mode: "task", taskId: resolved.id },
+      summary: `Cancel ${upcoming.length} upcoming reminder${upcoming.length === 1 ? "" : "s"} on "${resolved.name}".`,
+    };
+  }
+
+  if (reminderQuery) {
+    const candidates = await findCancellableRemindersByQuery(reminderQuery);
+    if (candidates.length === 0) {
+      return { status: "unresolved", message: `I couldn't find an upcoming reminder matching "${reminderQuery}".` };
+    }
+    if (candidates.length > 1) {
+      const names = candidates.map((c) => `"${c.message}"`).join(", ");
+      return { status: "unresolved", message: `That could match more than one reminder: ${names}. Which one did you mean?` };
+    }
+
+    const reminder = candidates[0];
+    return {
+      status: "ready",
+      resolvedArgs: { mode: "reminder", reminderId: reminder.id },
+      summary: `Cancel reminder: "${reminder.message}".`,
+    };
+  }
+
+  return { status: "need_field", message: "Which reminder(s) do you want to cancel?" };
+}
+
+export async function prepareUpdateSetting(args: Record<string, unknown>): Promise<PrepareResult> {
+  const key = args.key as string | undefined;
+  const value = args.value as string | undefined;
+  if (!key || !value) return { status: "need_field", message: "Which setting, and what value?" };
+
+  if (key === "daily_digest_time") {
+    if (!isValidDigestTime(value)) {
+      return { status: "need_field", message: "What time should the daily digest fire? (24-hour, e.g. 08:00)" };
+    }
+    return { status: "ready", resolvedArgs: { key, value }, summary: `Set the daily digest time to ${value}.` };
+  }
+
+  if (key === "whatsapp_number") {
+    if (!isValidWhatsAppNumber(value)) {
+      return { status: "need_field", message: "What's the WhatsApp number, with country code?" };
+    }
+    return { status: "ready", resolvedArgs: { key, value }, summary: `Set the WhatsApp reminder number to ${value}.` };
+  }
+
+  return { status: "need_field", message: "That setting isn't editable this way." };
+}
+
 export const WRITE_PREPARERS: Record<string, (args: Record<string, unknown>) => Promise<PrepareResult>> = {
   create_project: prepareCreateProject,
   edit_project: prepareEditProject,
@@ -670,4 +837,7 @@ export const WRITE_PREPARERS: Record<string, (args: Record<string, unknown>) => 
   create_vault_item_metadata: prepareCreateVaultItemMetadata,
   edit_vault_item_metadata: prepareEditVaultItemMetadata,
   delete_vault_item: prepareDeleteVaultItem,
+  create_reminder: prepareCreateReminder,
+  cancel_reminder: prepareCancelReminder,
+  update_setting: prepareUpdateSetting,
 };

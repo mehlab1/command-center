@@ -40,8 +40,48 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// Phase 6 fills these in with real payload handling / deep-linking.
-self.addEventListener("push", () => {});
+// FCM delivers web push through the standard Push API even though tokens
+// are obtained via the Firebase client SDK — no separate
+// firebase-messaging-sw.js needed, one service worker file handles both
+// asset caching and push (getToken() in lib/firebase.ts is told to use
+// this registration explicitly).
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = {};
+  }
+
+  const notification = payload.notification || {};
+  const data = payload.data || {};
+  const title = notification.title || data.title || "Command Center";
+  const body = notification.body || data.body || "";
+  const url = data.url || "/dashboard";
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url },
+    })
+  );
+});
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/dashboard";
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(url) && "focus" in client) return client.focus();
+      }
+      if (clients.length > 0 && "focus" in clients[0]) {
+        return clients[0].focus().then((c) => c.navigate(url));
+      }
+      return self.clients.openWindow(url);
+    })
+  );
 });

@@ -326,6 +326,39 @@ model Setting {
 }
 
 // ---------------------------------------------------------------------------
+// Notifications (not in docs/01-data-model.md — added in Phase 6, per
+// docs/06-scheduling-and-notifications.md)
+// ---------------------------------------------------------------------------
+
+// One row per registered browser/device (docs/06 explicitly calls out
+// supporting more than one device as "a reasonable and cheap addition" even
+// though it's a single user) — a push fans out to every row here.
+model PushToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("push_tokens")
+}
+
+// Generic dedup ledger for the cron tick's polled notifications (deadline
+// windows + daily digest) — one row per (entity, tier) so a tier only ever
+// fires once, per the dedup requirement in docs/06-scheduling-and-
+// notifications.md. The digest reuses this with entityType "digest",
+// entityId "-", and tier set to the date string, so a tick within the same
+// day never double-sends it.
+model NotificationLog {
+  id         String   @id @default(uuid())
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  tier       String
+  sentAt     DateTime @default(now()) @map("sent_at")
+
+  @@unique([entityType, entityId, tier])
+  @@map("notification_log")
+}
+
+// ---------------------------------------------------------------------------
 // Agent orchestration (not in docs/01-data-model.md — added in Phase 2)
 // ---------------------------------------------------------------------------
 

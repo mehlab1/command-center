@@ -8,6 +8,7 @@ const ITEMS = [
   { href: "/tasks", label: "TASKS" },
   { href: "/vault", label: "VAULT" },
   { href: "/chat", label: "CHAT" },
+  { href: "/settings", label: "SETTINGS" },
 ];
 
 export function BottomNav() {

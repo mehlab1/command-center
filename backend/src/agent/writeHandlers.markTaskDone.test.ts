@@ -17,6 +17,12 @@ jest.mock("../services/ratingService", () => ({
 }));
 jest.mock("../services/vaultService", () => ({ getVaultItemById: jest.fn() }));
 
+const listScheduledOccurrencesForTask = jest.fn();
+jest.mock("../services/reminderService", () => ({
+  listScheduledOccurrencesForTask: (...args: unknown[]) => listScheduledOccurrencesForTask(...args),
+  findCancellableRemindersByQuery: jest.fn(),
+}));
+
 // PendingClarification state (schema.prisma) — models "did the system
 // actually ask this, and hasn't gotten an answer yet" so a boolean the LLM
 // supplies unprompted (pattern-matched from unrelated history) is ignored.
@@ -45,6 +51,7 @@ function makeTask(deadline: Date) {
 beforeEach(() => {
   jest.clearAllMocks();
   clarificationRow = null;
+  listScheduledOccurrencesForTask.mockResolvedValue([]);
 });
 
 // The exact four-branch hybrid logic in docs/04-workflows.md § Deadline-miss
@@ -115,6 +122,71 @@ describe("mark_task_done — deadline-miss hybrid logic", () => {
     expect(result.status).toBe("ready");
     if (result.status === "ready") {
       expect(result.resolvedArgs.missedDeadline).toBe(true);
+    }
+  });
+});
+
+describe("mark_task_done — upcoming-reminders follow-up (docs/04-workflows.md)", () => {
+  it("asks about cancelling reminders only after missed_deadline has resolved, not both at once", async () => {
+    const past = new Date(Date.now() - 60_000);
+    resolveEntity.mockResolvedValue({ status: "resolved", id: "task-1", name: "Ship the thing" });
+    getTaskById.mockResolvedValue(makeTask(past));
+    listScheduledOccurrencesForTask.mockResolvedValue([{ id: "occ-1" }, { id: "occ-2" }]);
+
+    const first = await prepareMarkTaskDone({ task_query: "Ship the thing" });
+    expect(first.status).toBe("need_field");
+    if (first.status === "need_field") {
+      expect(first.message.toLowerCase()).toContain("missed deadline");
+    }
+
+    const second = await prepareMarkTaskDone({ task_query: "Ship the thing", missed_deadline: true });
+    expect(second.status).toBe("need_field");
+    if (second.status === "need_field") {
+      expect(second.message).toContain("2");
+      expect(second.message.toLowerCase()).toContain("reminder");
+    }
+  });
+
+  it("does not ask about reminders when the task has none scheduled", async () => {
+    const future = new Date(Date.now() + 60_000);
+    resolveEntity.mockResolvedValueOnce({ status: "resolved", id: "task-1", name: "Ship the thing" });
+    getTaskById.mockResolvedValueOnce(makeTask(future));
+    listScheduledOccurrencesForTask.mockResolvedValueOnce([]);
+
+    const result = await prepareMarkTaskDone({ task_query: "Ship the thing" });
+
+    expect(result.status).toBe("ready");
+  });
+
+  it("sets cancelReminders true when the user says yes", async () => {
+    const future = new Date(Date.now() + 60_000);
+    resolveEntity.mockResolvedValue({ status: "resolved", id: "task-1", name: "Ship the thing" });
+    getTaskById.mockResolvedValue(makeTask(future));
+    listScheduledOccurrencesForTask.mockResolvedValue([{ id: "occ-1" }]);
+
+    await prepareMarkTaskDone({ task_query: "Ship the thing" }); // asks about reminders
+    const result = await prepareMarkTaskDone({ task_query: "Ship the thing", cancel_reminders: true });
+
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.resolvedArgs.cancelReminders).toBe(true);
+      expect(result.summary).toContain("cancelling");
+    }
+  });
+
+  it("leaves cancelReminders undefined when the user says no", async () => {
+    const future = new Date(Date.now() + 60_000);
+    resolveEntity.mockResolvedValue({ status: "resolved", id: "task-1", name: "Ship the thing" });
+    getTaskById.mockResolvedValue(makeTask(future));
+    listScheduledOccurrencesForTask.mockResolvedValue([{ id: "occ-1" }]);
+
+    await prepareMarkTaskDone({ task_query: "Ship the thing" }); // asks about reminders
+    const result = await prepareMarkTaskDone({ task_query: "Ship the thing", cancel_reminders: false });
+
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.resolvedArgs.cancelReminders).toBe(false);
+      expect(result.summary).not.toContain("cancelling");
     }
   });
 });

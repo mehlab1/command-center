@@ -9,6 +9,10 @@ import { auditLogRouter } from "./routes/auditLog";
 import { entitiesRouter } from "./routes/entities";
 import { dashboardRouter } from "./routes/dashboard";
 import { vaultRouter } from "./routes/vault";
+import { cronRouter } from "./routes/cron";
+import { pushRouter } from "./routes/push";
+import { settingsRouter } from "./routes/settings";
+import { remindersRouter } from "./routes/reminders";
 import { errorHandler } from "./middleware/errorHandler";
 
 export function createApp() {
@@ -28,6 +32,10 @@ export function createApp() {
   app.use("/api/audit-log", auditLogRouter);
   app.use("/api/dashboard", dashboardRouter);
   app.use("/api/vault", vaultRouter);
+  app.use("/api/cron", cronRouter);
+  app.use("/api/push", pushRouter);
+  app.use("/api/settings", settingsRouter);
+  app.use("/api/reminders", remindersRouter);
   app.use("/api", entitiesRouter);
 
   app.use((_req, res) => {

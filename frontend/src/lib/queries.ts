@@ -7,6 +7,8 @@ import {
   PodDTO,
   ProjectDTO,
   QaEntryDTO,
+  ReminderDTO,
+  SettingsDTO,
   TaskDTO,
   VaultItemDTO,
 } from "./types";
@@ -49,6 +51,14 @@ export function usePerformance() {
     queryKey: ["dashboard", "performance"],
     queryFn: () => fetchJson<DevPerformanceDTO[]>("/api/dashboard/performance"),
   });
+}
+
+export function useSettings() {
+  return useQuery({ queryKey: ["settings"], queryFn: () => fetchJson<SettingsDTO>("/api/settings") });
+}
+
+export function useStandaloneReminders() {
+  return useQuery({ queryKey: ["reminders"], queryFn: () => fetchJson<ReminderDTO[]>("/api/reminders") });
 }
 
 export function useVaultItems(filter: { folder?: string; tag?: string; q?: string } = {}) {

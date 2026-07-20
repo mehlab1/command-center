@@ -75,7 +75,7 @@ async function executeReadTool(name: string, args: Record<string, unknown>): Pro
 // message (e.g. "Dave: is he permanent or an intern?").
 function labelForCall(call: LlmToolCall): string {
   const args = call.args;
-  for (const key of ["name", "title", "dev_query", "task_query", "project_query", "pod_query", "vault_item_query"]) {
+  for (const key of ["name", "title", "message", "dev_query", "task_query", "project_query", "pod_query", "vault_item_query", "reminder_query"]) {
     const value = args[key];
     if (typeof value === "string" && value) return value;
   }

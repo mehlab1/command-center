@@ -7,6 +7,9 @@ import * as taskService from "../services/taskService";
 import * as qaService from "../services/qaService";
 import * as ratingService from "../services/ratingService";
 import * as vaultService from "../services/vaultService";
+import * as reminderService from "../services/reminderService";
+import { sendPushToAllDevices } from "../services/pushService";
+import { setSetting } from "../services/settingsService";
 
 // Runs only after the user has explicitly confirmed — this is the single
 // place a write tool's resolved args actually touch the database.
@@ -216,6 +219,14 @@ export async function executeWrite(
         args.blockerDescription as string,
         new Date(args.revisedDeadline as string)
       );
+      // Event-driven, not polled — fires immediately from within this same
+      // request rather than waiting for the next cron tick
+      // (docs/06-scheduling-and-notifications.md).
+      await sendPushToAllDevices({
+        title: "Task blocked",
+        body: `"${task.title}" is blocked: ${args.blockerDescription as string}`,
+        url: "/tasks",
+      });
       await recordAudit({
         actionType: AuditActionType.EDIT,
         entityType: "task",
@@ -236,6 +247,13 @@ export async function executeWrite(
       // confirm step (docs/03-agent-and-llm.md).
       if (task.needsQa) {
         await qaService.createQaEntryForTask(task.id);
+        // Event-driven push the moment the item lands in the QA queue, not
+        // the next cron tick.
+        await sendPushToAllDevices({ title: "QA review needed", body: `"${task.title}" is ready for QA.`, url: "/dashboard" });
+      }
+
+      if (args.cancelReminders === true) {
+        await reminderService.cancelRemindersForTask(id);
       }
 
       await recordAudit({
@@ -350,6 +368,65 @@ export async function executeWrite(
         source: AuditSource.CHAT,
       });
       return { entityType: "vault_item", entityId: id };
+    }
+
+    case "create_reminder": {
+      const reminder = await reminderService.createReminder({
+        message: args.message as string,
+        linkedTaskId: args.linkedTaskId as string | undefined,
+        linkedProjectId: args.linkedProjectId as string | undefined,
+        channel: args.channel as "PUSH" | "WHATSAPP",
+        fireTimes: (args.fireTimes as string[]).map((s) => new Date(s)),
+      });
+      await recordAudit({
+        actionType: AuditActionType.CREATE,
+        entityType: "reminder",
+        entityId: reminder.id,
+        summary,
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "reminder", entityId: reminder.id };
+    }
+
+    case "cancel_reminder": {
+      if (args.mode === "task") {
+        const taskId = args.taskId as string;
+        const count = await reminderService.cancelRemindersForTask(taskId);
+        await recordAudit({
+          actionType: AuditActionType.EDIT,
+          entityType: "task",
+          entityId: taskId,
+          summary,
+          diff: { reminders_cancelled: count },
+          source: AuditSource.CHAT,
+        });
+        return { entityType: "task", entityId: taskId };
+      }
+      const reminderId = args.reminderId as string;
+      await reminderService.cancelReminderById(reminderId);
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "reminder",
+        entityId: reminderId,
+        summary,
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "reminder", entityId: reminderId };
+    }
+
+    case "update_setting": {
+      const key = args.key as string;
+      const value = args.value as string;
+      await setSetting(key, value);
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "setting",
+        entityId: key,
+        summary,
+        diff: { key, value },
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "setting", entityId: key };
     }
 
     default:
