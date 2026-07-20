@@ -298,3 +298,21 @@ model Setting {
 
   @@map("settings")
 }
+
+// ---------------------------------------------------------------------------
+// Agent orchestration (not in docs/01-data-model.md — added in Phase 2)
+// ---------------------------------------------------------------------------
+
+// A write the agent has proposed but not yet executed, sitting between
+// "summarize" and "wait for confirm" in the confirm-before-commit loop
+// (docs/03-agent-and-llm.md). Persisted rather than kept in memory so an
+// in-progress confirmation survives a Render cold restart.
+model PendingAction {
+  id        String   @id @default(uuid())
+  toolName  String   @map("tool_name")
+  args      Json
+  summary   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("pending_actions")
+}

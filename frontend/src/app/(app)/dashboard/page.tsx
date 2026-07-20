@@ -40,6 +40,9 @@ export default function DashboardPlaceholder() {
         This is a placeholder — the real dashboard (projects, tasks, QA, vault) is built in
         Phase 4.
       </p>
+      <a href="/audit" className="text-sm text-accent underline">
+        View audit log
+      </a>
       <button
         onClick={handleLogout}
         className="rounded-sm border border-border px-4 py-2 text-sm text-ink"
