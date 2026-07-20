@@ -2,6 +2,7 @@ const chatMessageCreate = jest.fn();
 const pendingActionCreate = jest.fn();
 const pendingActionDeleteMany = jest.fn();
 const pendingActionFindUnique = jest.fn();
+const pendingActionFindFirst = jest.fn();
 const pendingActionDelete = jest.fn();
 
 jest.mock("../lib/prisma", () => ({
@@ -14,6 +15,7 @@ jest.mock("../lib/prisma", () => ({
       deleteMany: (...args: unknown[]) => pendingActionDeleteMany(...args),
       create: (...args: unknown[]) => pendingActionCreate(...args),
       findUnique: (...args: unknown[]) => pendingActionFindUnique(...args),
+      findFirst: (...args: unknown[]) => pendingActionFindFirst(...args),
       delete: (...args: unknown[]) => pendingActionDelete(...args),
     },
   },
@@ -38,6 +40,7 @@ beforeEach(() => {
     id: "pending-1",
     ...(args.data as object),
   }));
+  pendingActionFindFirst.mockResolvedValue(null);
 });
 
 describe("handleUserMessage — write tool with all fields resolved", () => {

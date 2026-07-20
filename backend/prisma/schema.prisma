@@ -168,8 +168,12 @@ model QaQueueEntry {
   resolvedAt             DateTime? @map("resolved_at")
 
   task              Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  suggestedReviewer Dev? @relation("SuggestedReviewer", fields: [suggestedReviewerDevId], references: [id])
-  assignedReviewer  Dev? @relation("AssignedReviewer", fields: [assignedReviewerDevId], references: [id])
+  // SetNull, not the default NO ACTION: deleting a dev who is a suggested/
+  // assigned reviewer somewhere must not block that deletion with a raw FK
+  // error — the entry just needs a new reviewer, per the existing pattern of
+  // checkDeleteDev warning about open tasks before allowing dev deletion.
+  suggestedReviewer Dev? @relation("SuggestedReviewer", fields: [suggestedReviewerDevId], references: [id], onDelete: SetNull)
+  assignedReviewer  Dev? @relation("AssignedReviewer", fields: [assignedReviewerDevId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@map("qa_queue_entries")
@@ -183,7 +187,13 @@ model RatingsHistory {
   onTime    Boolean  @map("on_time")
   createdAt DateTime @default(now()) @map("created_at")
 
-  dev  Dev  @relation(fields: [devId], references: [id], onDelete: Cascade)
+  // No onDelete: Cascade on dev, deliberately — ratings_history is the
+  // append-only source for trend charts (docs/01-data-model.md); silently
+  // wiping a dev's whole rating history the moment they're deleted would
+  // destroy exactly the historical data this table exists to preserve.
+  // devService.deleteDev surfaces this as a clear warning instead of letting
+  // it surface as a raw FK constraint error.
+  dev  Dev  @relation(fields: [devId], references: [id])
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([devId])

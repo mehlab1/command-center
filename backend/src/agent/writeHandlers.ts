@@ -1,6 +1,7 @@
 import { resolveEntity, ResolutionResult, EntityType } from "./disambiguation";
 import { checkDeleteDev, getDevById } from "../services/devService";
 import { checkDeleteProject } from "../services/projectService";
+import { getPodLedBy } from "../services/podService";
 import { getTaskById } from "../services/taskService";
 import { assertRatable, NotRatableError } from "../services/ratingService";
 import { prisma } from "../lib/prisma";
@@ -17,6 +18,12 @@ async function consumePendingClarification(taskId: string, field: string): Promi
   await prisma.pendingClarification.delete({ where: { id: row.id } });
   return true;
 }
+
+// Defense in depth: the tool schema declares these as enums, but a malformed
+// LLM output would otherwise reach Prisma as a raw, unhandled enum-mismatch
+// error instead of a clear message.
+const PROJECT_STATUSES = ["ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"];
+const EMPLOYMENT_TYPES = ["PERMANENT", "INTERN"];
 
 export type PrepareResult =
   | { status: "need_field"; message: string }
@@ -64,6 +71,13 @@ export async function prepareEditProject(args: Record<string, unknown>): Promise
   const resolved = await resolveOrNull(query, "project", "project");
   if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
   if (!resolved) return { status: "unresolved", message: "Which project do you want to edit?" };
+
+  if (args.status && !PROJECT_STATUSES.includes(args.status as string)) {
+    return {
+      status: "need_field",
+      message: `Status has to be one of ${PROJECT_STATUSES.join(", ")} — which did you mean?`,
+    };
+  }
 
   const changes: string[] = [];
   if (args.name) changes.push(`name → "${args.name}"`);
@@ -128,6 +142,9 @@ export async function prepareCreateDev(args: Record<string, unknown>): Promise<P
   if (!employmentType) {
     return { status: "need_field", message: "Is this dev permanent or an intern?" };
   }
+  if (!EMPLOYMENT_TYPES.includes(employmentType)) {
+    return { status: "need_field", message: "Is this dev permanent or an intern?" };
+  }
 
   const summary = `Add dev "${name}"${args.designation ? `, ${args.designation}` : ""} (${employmentType}).`;
   return {
@@ -149,6 +166,10 @@ export async function prepareEditDev(args: Record<string, unknown>): Promise<Pre
   const resolved = await resolveOrNull(query, "dev", "dev");
   if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
   if (!resolved) return { status: "unresolved", message: "Which dev do you want to edit?" };
+
+  if (args.employment_type && !EMPLOYMENT_TYPES.includes(args.employment_type as string)) {
+    return { status: "need_field", message: "Is this dev permanent or an intern?" };
+  }
 
   const changes: string[] = [];
   if (args.name) changes.push(`name → "${args.name}"`);
@@ -181,11 +202,28 @@ export async function prepareDeleteDev(args: Record<string, unknown>): Promise<P
   if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
   if (!resolved) return { status: "unresolved", message: "Which dev do you want to delete?" };
 
-  const { openTaskCount } = await checkDeleteDev(resolved.id);
+  const { openTaskCount, ratingsHistoryCount, ledPodNames } = await checkDeleteDev(resolved.id);
+
+  // Hard blocks — a pod always needs exactly one lead, and rating history is
+  // deliberately never destroyed by a dev deletion (see schema.prisma).
+  // Neither has an "acknowledge and proceed anyway" path.
+  if (ledPodNames.length > 0) {
+    return {
+      status: "unresolved",
+      message: `"${resolved.name}" leads ${ledPodNames.length > 1 ? "pods" : "pod"} ${ledPodNames.join(", ")} — reassign the lead first (e.g. "make someone else the lead of ${ledPodNames[0]}"), then delete ${resolved.name}.`,
+    };
+  }
+  if (ratingsHistoryCount > 0) {
+    return {
+      status: "unresolved",
+      message: `"${resolved.name}" has ${ratingsHistoryCount} rating(s) on record. Deleting them would also require deciding what happens to that history, which isn't supported from chat — this needs a manual decision, not something to do casually.`,
+    };
+  }
+
   if (openTaskCount > 0 && args.acknowledged_open_tasks !== true) {
     return {
       status: "need_field",
-      message: `"${resolved.name}" has ${openTaskCount} open task(s) assigned. Delete anyway? Those tasks will keep their assignee reference removed — let me know if you'd rather reassign them first.`,
+      message: `"${resolved.name}" has ${openTaskCount} open task(s) assigned. Delete anyway? Those tasks will lose this assignee (they'll stay as-is otherwise, just unassigned from ${resolved.name}).`,
     };
   }
 
@@ -225,6 +263,14 @@ export async function prepareCreatePod(args: Record<string, unknown>): Promise<P
   if (lead && "error" in lead) return { status: "unresolved", message: lead.error };
   if (!lead) return { status: "unresolved", message: "Who's leading this pod?" };
 
+  const existingLead = await getPodLedBy(lead.id);
+  if (existingLead) {
+    return {
+      status: "unresolved",
+      message: `${lead.name} already leads pod "${existingLead.name}" — a dev can only lead one pod at a time. Reassign them off that pod first if you want them to lead a new one.`,
+    };
+  }
+
   return {
     status: "ready",
     resolvedArgs: { name, leadDevId: lead.id },
@@ -260,6 +306,14 @@ export async function prepareReassignPodLead(args: Record<string, unknown>): Pro
   const newLead = await resolveOrNull(newLeadQuery, "dev", "dev");
   if (newLead && "error" in newLead) return { status: "unresolved", message: newLead.error };
   if (!pod || !newLead) return { status: "unresolved", message: "I need both the pod and the new lead's name." };
+
+  const existingLead = await getPodLedBy(newLead.id);
+  if (existingLead && existingLead.id !== pod.id) {
+    return {
+      status: "unresolved",
+      message: `${newLead.name} already leads pod "${existingLead.name}" — a dev can only lead one pod at a time. Reassign them off that pod first.`,
+    };
+  }
 
   return {
     status: "ready",

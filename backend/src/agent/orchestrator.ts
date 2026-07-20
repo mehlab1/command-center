@@ -37,7 +37,11 @@ async function recentHistoryAsLlmMessages(): Promise<LlmMessage[]> {
     }));
 }
 
-async function describeResolution(query: string, type: "dev" | "pod" | "project", label: string): Promise<string> {
+async function describeResolution(
+  query: string,
+  type: "dev" | "pod" | "project" | "task",
+  label: string
+): Promise<string> {
   const result = await resolveEntity(query, type);
   if (result.status === "resolved") return `Found ${label}: "${result.name}".`;
   if (result.status === "ambiguous") {
@@ -55,6 +59,8 @@ async function executeReadTool(name: string, args: Record<string, unknown>): Pro
       return describeResolution(query, "project", "project");
     case "search_pod":
       return describeResolution(query, "pod", "pod");
+    case "search_task":
+      return describeResolution(query, "task", "task");
     default:
       return "Unknown lookup tool.";
   }
@@ -65,7 +71,18 @@ export async function handleUserMessage(content: string): Promise<OrchestratorRe
 
   const history = await recentHistoryAsLlmMessages();
   const now = new Date();
-  const systemWithClock = `${SYSTEM_PROMPT}\n\nCurrent date/time (use this for any relative date the user mentions — "tomorrow", "in 5 days", "next week", etc — never guess or use your training cutoff): ${now.toISOString()} (${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })})`;
+  let systemWithClock = `${SYSTEM_PROMPT}\n\nCurrent date/time (use this for any relative date the user mentions — "tomorrow", "in 5 days", "next week", etc — never guess or use your training cutoff): ${now.toISOString()} (${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })})`;
+
+  // If a proposal is still awaiting confirmation, nothing has been written
+  // yet — the LLM has no other way to know this, and without it a
+  // correction like "I meant X, not Y" gets misread as editing something
+  // that doesn't exist (observed in testing) instead of re-proposing the
+  // same create/write with corrected details.
+  const pending = await prisma.pendingAction.findFirst({ orderBy: { createdAt: "desc" } });
+  if (pending) {
+    systemWithClock += `\n\nThere is a proposal awaiting the user's confirmation that has NOT been written to the database yet: "${pending.summary}". If the user's next message confirms it, a separate confirm action (not you) handles that. If they're correcting or changing details instead, call the same kind of tool again (e.g. still create_*, never edit_* — nothing exists yet to edit) with the corrected information; the old proposal will be replaced automatically.`;
+  }
+
   const workingMessages: LlmMessage[] = [{ role: "system", content: systemWithClock }, ...history];
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {

@@ -97,10 +97,13 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "delete_dev",
-    description: "Delete a dev. If they have open (non-Done) tasks assigned, you must warn the user and ask what to do before proceeding — the system will surface the open task count to you.",
+    description: "Delete a dev. If they have open (non-Done) tasks assigned, the system will tell you the count and ask the user to confirm before proceeding — once the user has explicitly confirmed that in their reply, call this again with acknowledged_open_tasks true.",
     parameters: {
       type: "object",
-      properties: { dev_query: { type: "string" } },
+      properties: {
+        dev_query: { type: "string" },
+        acknowledged_open_tasks: { type: "boolean", description: "Set true only after the user has explicitly confirmed deleting despite open tasks" },
+      },
       required: ["dev_query"],
     },
   },

@@ -58,13 +58,23 @@ export async function editDev(
 
 export interface DeleteDevCheck {
   openTaskCount: number;
+  ratingsHistoryCount: number;
+  ledPodNames: string[];
 }
 
+// Surfaces every reason deletion could fail as a clear message instead of a
+// raw FK constraint error — leadDevId is required (a pod always has exactly
+// one lead) and ratings_history.dev_id intentionally has no onDelete:Cascade
+// (see schema.prisma), so both would otherwise throw at the DB layer.
 export async function checkDeleteDev(id: string): Promise<DeleteDevCheck> {
-  const openTaskCount = await prisma.task.count({
-    where: { status: { not: TaskStatus.DONE }, assignees: { some: { devId: id } } },
-  });
-  return { openTaskCount };
+  const [openTaskCount, ratingsHistoryCount, ledPods] = await Promise.all([
+    prisma.task.count({
+      where: { status: { not: TaskStatus.DONE }, assignees: { some: { devId: id } } },
+    }),
+    prisma.ratingsHistory.count({ where: { devId: id } }),
+    prisma.pod.findMany({ where: { leadDevId: id }, select: { name: true } }),
+  ]);
+  return { openTaskCount, ratingsHistoryCount, ledPodNames: ledPods.map((p) => p.name) };
 }
 
 export async function deleteDev(id: string): Promise<Dev> {

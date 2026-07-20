@@ -9,6 +9,13 @@ export async function getPodById(id: string) {
   return prisma.pod.findUnique({ where: { id }, include: { members: true, lead: true } });
 }
 
+// Pod.leadDevId is unique — a dev can only lead one pod at a time. Callers
+// must check this before create_pod/reassign_pod_lead or the write throws a
+// raw unique-constraint error instead of a clear message.
+export async function getPodLedBy(devId: string): Promise<Pod | null> {
+  return prisma.pod.findUnique({ where: { leadDevId: devId } });
+}
+
 // Lead is also kept as a member for roster-display consistency, per
 // docs/01-data-model.md's recommendation.
 export async function createPod(input: { name: string; leadDevId: string }): Promise<Pod> {
