@@ -1,6 +1,6 @@
 import { prisma } from "../lib/prisma";
 
-export type EntityType = "dev" | "pod" | "project";
+export type EntityType = "dev" | "pod" | "project" | "task";
 
 export interface ResolutionCandidate {
   id: string;
@@ -13,10 +13,12 @@ export type ResolutionResult =
   | { status: "ambiguous"; candidates: ResolutionCandidate[] }
   | { status: "not_found" };
 
-const TABLE: Record<EntityType, string> = {
-  dev: "devs",
-  pod: "pods",
-  project: "projects",
+// (table, column) — tasks are matched on `title`, not `name`.
+const TABLE_COLUMN: Record<EntityType, { table: string; column: string }> = {
+  dev: { table: "devs", column: "name" },
+  pod: { table: "pods", column: "name" },
+  project: { table: "projects", column: "name" },
+  task: { table: "tasks", column: "title" },
 };
 
 // exact -> case-insensitive -> fuzzy/trigram threshold -> ambiguous/not-found.
@@ -26,12 +28,12 @@ const FUZZY_THRESHOLD = 0.3;
 const CONFIDENT_THRESHOLD = 0.55;
 
 export async function resolveEntity(query: string, type: EntityType): Promise<ResolutionResult> {
-  const table = TABLE[type];
+  const { table, column } = TABLE_COLUMN[type];
   const trimmed = query.trim();
   if (!trimmed) return { status: "not_found" };
 
   const exact = await prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
-    `SELECT id, name FROM "${table}" WHERE name = $1`,
+    `SELECT id, "${column}" AS name FROM "${table}" WHERE "${column}" = $1`,
     trimmed
   );
   if (exact.length === 1) return { status: "resolved", id: exact[0].id, name: exact[0].name };
@@ -40,7 +42,7 @@ export async function resolveEntity(query: string, type: EntityType): Promise<Re
   }
 
   const caseInsensitive = await prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
-    `SELECT id, name FROM "${table}" WHERE lower(name) = lower($1)`,
+    `SELECT id, "${column}" AS name FROM "${table}" WHERE lower("${column}") = lower($1)`,
     trimmed
   );
   if (caseInsensitive.length === 1) {
@@ -54,9 +56,9 @@ export async function resolveEntity(query: string, type: EntityType): Promise<Re
   }
 
   const fuzzy = await prisma.$queryRawUnsafe<{ id: string; name: string; similarity: number }[]>(
-    `SELECT id, name, similarity(name, $1) AS similarity
+    `SELECT id, "${column}" AS name, similarity("${column}", $1) AS similarity
      FROM "${table}"
-     WHERE similarity(name, $1) > $2
+     WHERE similarity("${column}", $1) > $2
      ORDER BY similarity DESC
      LIMIT 5`,
     trimmed,

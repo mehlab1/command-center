@@ -16,7 +16,7 @@ export const env = {
   // availability shifts (docs/03-agent-and-llm.md). Verify these are still
   // on the free tier before relying on them long-term.
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
-  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   groqModel: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b",
 };

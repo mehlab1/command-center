@@ -64,7 +64,9 @@ export async function handleUserMessage(content: string): Promise<OrchestratorRe
   await saveMessage(ChatRole.USER, content);
 
   const history = await recentHistoryAsLlmMessages();
-  const workingMessages: LlmMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, ...history];
+  const now = new Date();
+  const systemWithClock = `${SYSTEM_PROMPT}\n\nCurrent date/time (use this for any relative date the user mentions — "tomorrow", "in 5 days", "next week", etc — never guess or use your training cutoff): ${now.toISOString()} (${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })})`;
+  const workingMessages: LlmMessage[] = [{ role: "system", content: systemWithClock }, ...history];
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     const response = await llmRouter.chat(workingMessages, ALL_TOOLS);

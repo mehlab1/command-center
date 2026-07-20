@@ -3,6 +3,9 @@ import { recordAudit } from "../services/auditService";
 import * as devService from "../services/devService";
 import * as podService from "../services/podService";
 import * as projectService from "../services/projectService";
+import * as taskService from "../services/taskService";
+import * as qaService from "../services/qaService";
+import * as ratingService from "../services/ratingService";
 
 // Runs only after the user has explicitly confirmed — this is the single
 // place a write tool's resolved args actually touch the database.
@@ -164,6 +167,130 @@ export async function executeWrite(
         source: AuditSource.CHAT,
       });
       return { entityType: "pod", entityId: pod.id };
+    }
+
+    case "create_task": {
+      const task = await taskService.createTask({
+        title: args.title as string,
+        description: args.description as string | undefined,
+        notes: args.notes as string | undefined,
+        projectId: args.projectId as string | undefined,
+        isPersonal: args.isPersonal as boolean,
+        deadline: new Date(args.deadline as string),
+        needsQa: args.needsQa as boolean,
+        assigneeDevIds: (args.assigneeDevIds as string[]) ?? [],
+      });
+      // Consumes a pending QA send-back if one exists — same create_task
+      // code path either way (docs/04-workflows.md "Sent Back" flow).
+      await taskService.linkPendingSupersessionIfAny(task.id);
+      await recordAudit({
+        actionType: AuditActionType.CREATE,
+        entityType: "task",
+        entityId: task.id,
+        summary,
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "task", entityId: task.id };
+    }
+
+    case "delete_task": {
+      const id = args.id as string;
+      const task = await taskService.deleteTask(id);
+      await recordAudit({
+        actionType: AuditActionType.DELETE,
+        entityType: "task",
+        entityId: id,
+        summary,
+        diff: { before: task },
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "task", entityId: id };
+    }
+
+    case "mark_task_blocked": {
+      const id = args.id as string;
+      const before = await taskService.getTaskById(id);
+      const task = await taskService.markTaskBlocked(
+        id,
+        args.blockerDescription as string,
+        new Date(args.revisedDeadline as string)
+      );
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "task",
+        entityId: task.id,
+        summary,
+        diff: { before, after: task },
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "task", entityId: task.id };
+    }
+
+    case "mark_task_done": {
+      const id = args.id as string;
+      const before = await taskService.getTaskById(id);
+      const task = await taskService.markTaskDone(id, args.missedDeadline as boolean);
+
+      // System-triggered QA entry creation — same execution, not a separate
+      // confirm step (docs/03-agent-and-llm.md).
+      if (task.needsQa) {
+        await qaService.createQaEntryForTask(task.id);
+      }
+
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "task",
+        entityId: task.id,
+        summary,
+        diff: { before, after: task },
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "task", entityId: task.id };
+    }
+
+    case "assign_qa_reviewer": {
+      const qaEntryId = args.qaEntryId as string;
+      const entry = await qaService.assignQaReviewer(qaEntryId, args.reviewerDevId as string);
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "qa_queue_entry",
+        entityId: entry.id,
+        summary,
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "qa_queue_entry", entityId: entry.id };
+    }
+
+    case "resolve_qa_entry": {
+      const qaEntryId = args.qaEntryId as string;
+      const outcomeNotes = args.outcomeNotes as string | undefined;
+      const entry =
+        args.outcome === "PASSED"
+          ? await qaService.resolveQaEntryPassed(qaEntryId, outcomeNotes)
+          : await qaService.resolveQaEntrySentBack(qaEntryId, args.taskId as string, outcomeNotes);
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "qa_queue_entry",
+        entityId: entry.id,
+        summary,
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "qa_queue_entry", entityId: entry.id };
+    }
+
+    case "rate_task": {
+      const taskId = args.taskId as string;
+      const devId = args.devId as string;
+      const rating = args.rating as number;
+      await ratingService.rateTask(taskId, devId, rating);
+      await recordAudit({
+        actionType: AuditActionType.CREATE,
+        entityType: "ratings_history",
+        entityId: taskId,
+        summary,
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "ratings_history", entityId: taskId };
     }
 
     default:

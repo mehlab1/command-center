@@ -71,6 +71,11 @@ export async function geminiChat(
   const body: Record<string, unknown> = {
     contents: toGeminiContents(messages),
     tools: toGeminiTools(tools),
+    // 2.5-flash is a "thinking" model — without capping this, it can spend
+    // its whole token budget on invisible reasoning and return truly empty
+    // content, especially with a large tool set. Deterministic tool-routing
+    // doesn't need visible chain-of-thought, so disable it outright.
+    generationConfig: { thinkingConfig: { thinkingBudget: 0 } },
   };
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };

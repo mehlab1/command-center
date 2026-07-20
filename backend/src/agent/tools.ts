@@ -16,6 +16,11 @@ const READ_TOOLS: LlmTool[] = [
     description: "Look up an existing pod by name (fuzzy match).",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
+  {
+    name: "search_task",
+    description: "Look up an existing task by title (fuzzy match).",
+    parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+  },
 ];
 
 const WRITE_TOOLS: LlmTool[] = [
@@ -135,6 +140,93 @@ const WRITE_TOOLS: LlmTool[] = [
       required: ["pod_query", "new_lead_dev_query"],
     },
   },
+  {
+    name: "create_task",
+    description: "Create a brand-new task. Either is_personal must be true (a task for Mehlab himself, not a dev) or at least one assignee_dev_queries entry must be given — never both. If the user says something like 'remind me to...' or 'I need to finish...' without naming a dev, infer is_personal true rather than asking who it's for. needs_qa is decided now and can never be changed later, so if it's not obvious, ask.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        description: { type: "string" },
+        notes: { type: "string" },
+        project_query: { type: "string", description: "Project this task belongs to, if any" },
+        is_personal: { type: "boolean" },
+        assignee_dev_queries: { type: "array", items: { type: "string" }, description: "Up to 2 devs" },
+        deadline: { type: "string", description: "ISO 8601 date, required" },
+        needs_qa: { type: "boolean" },
+      },
+      required: ["title", "deadline", "needs_qa"],
+    },
+  },
+  {
+    name: "delete_task",
+    description: "Delete a task. There is no edit_task tool — per the golden rule, changing an in-progress task's content is always delete this, then create_task fresh, never an edit.",
+    parameters: {
+      type: "object",
+      properties: { task_query: { type: "string" } },
+      required: ["task_query"],
+    },
+  },
+  {
+    name: "mark_task_blocked",
+    description: "Mark a task blocked. Both blocker_description and revised_deadline are required together. If the user only gives you one of the two (e.g. just says what's blocking it, with no new date), you MUST call this tool with only the field they actually stated and omit the other — do not invent, estimate, or default the missing one. The system will ask for whatever's missing; do not guess a plausible-looking date yourself.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_query: { type: "string" },
+        blocker_description: { type: "string" },
+        revised_deadline: { type: "string", description: "ISO 8601 date — omit entirely if the user did not state one, never estimate it" },
+      },
+      required: ["task_query", "blocker_description", "revised_deadline"],
+    },
+  },
+  {
+    name: "mark_task_done",
+    description: "Mark a task done. If it's being completed after its deadline, the system will ask whether that should count as a missed deadline before confirming — you don't need to ask this yourself, just call the tool.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_query: { type: "string" },
+        missed_deadline: { type: "boolean", description: "Only include this if the user has already answered the missed-deadline question in this conversation" },
+      },
+      required: ["task_query"],
+    },
+  },
+  {
+    name: "assign_qa_reviewer",
+    description: "Assign a reviewer to a task's QA entry. Always requires an explicit dev, even if a reviewer was suggested — never auto-assign the suggested one without the user confirming.",
+    parameters: {
+      type: "object",
+      properties: { task_query: { type: "string" }, reviewer_dev_query: { type: "string" } },
+      required: ["task_query", "reviewer_dev_query"],
+    },
+  },
+  {
+    name: "resolve_qa_entry",
+    description: "Resolve a task's QA review as passed or sent back.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_query: { type: "string" },
+        outcome: { type: "string", enum: ["PASSED", "SENT_BACK"] },
+        outcome_notes: { type: "string" },
+      },
+      required: ["task_query", "outcome"],
+    },
+  },
+  {
+    name: "rate_task",
+    description: "Rate a dev's work on a completed task, 1-5. Only valid once the task is Done (and QA-passed if it needed QA). If a task has multiple assignees, this rates one dev at a time — ask which dev if unclear, or call it once per dev if the user gives multiple scores.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_query: { type: "string" },
+        dev_query: { type: "string", description: "Which assignee this rating is for — required if the task has more than one assignee" },
+        rating: { type: "integer", minimum: 1, maximum: 5 },
+      },
+      required: ["task_query", "rating"],
+    },
+  },
 ];
 
 export const ALL_TOOLS: LlmTool[] = [...READ_TOOLS, ...WRITE_TOOLS];
@@ -148,5 +240,7 @@ Rules you must follow exactly:
 - Never confuse creating something new with changing something that already exists. If the user names an existing dev/project/pod and wants a detail about them changed (designation, deadline, name, status — anything), that is always an edit_*/reassign_* call, never a create_* call, even if they don't use the word "edit" (e.g. "Ehsan's designation is now Senior Engineer" means edit_dev, not create_dev). Only call a create_* tool when the user is clearly introducing something that doesn't exist yet.
 - If a name mentioned (a dev, project, or pod) is ambiguous or unclear, prefer letting the system's resolution handle it — just pass through the name as the user said it (e.g. "project_query": "the marketing site"). Never invent or guess a fuller/different name than what the user actually said.
 - If required information for a tool is genuinely missing from the conversation (not a name to resolve, but a real missing field like employment_type), ask the user directly in plain text instead of guessing.
+- Never invent a plausible-looking value (a date, a number, a name) for a field the user did not actually state, even if it would make the tool call "complete." Omit that field from the call entirely — the system will notice it's missing and ask for it. This matters most for dates: if the user gives a relative date for one field (e.g. a deadline) but not another (e.g. a revised deadline on a blocked task), do not reuse, estimate, or extrapolate a date for the field they didn't mention.
 - Keep replies short and plain. No markdown headers, no bullet-point walls, sentence case.
-- If the user pastes something that looks like a secret/credential/API key, do not include it in any tool call — tell them the Vault has a secure entry path for that instead (not available yet in this phase).`;
+- If the user pastes something that looks like a secret/credential/API key, do not include it in any tool call — tell them the Vault has a secure entry path for that instead (not available yet in this phase).
+- There is no edit_task tool, ever — this is deliberate, not missing. If the user wants to change a task's title, deadline, assignees, or description, the correct flow is delete_task then a fresh create_task, and you should say so plainly rather than looking for an edit tool that doesn't exist. Status changes (blocked/done) go through mark_task_blocked/mark_task_done, which are not edits in this sense.`;

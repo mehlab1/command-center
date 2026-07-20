@@ -316,3 +316,31 @@ model PendingAction {
 
   @@map("pending_actions")
 }
+
+// Bridges a QA send-back to the replacement task's creation (Phase 3,
+// docs/04-workflows.md "Sent Back" flow): resolve_qa_entry(SENT_BACK) writes
+// one row here; the very next create_task consumes it to set
+// supersedes_task_id / superseded_by_task_id server-side, with nothing
+// pre-filled and no special-cased tool call — same pattern as PendingAction.
+model PendingSupersession {
+  id             String   @id @default(uuid())
+  originalTaskId String   @map("original_task_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("pending_supersessions")
+}
+
+// Marks that the system itself asked a specific yes/no question about a
+// specific task and is waiting on the answer — e.g. the deadline-miss
+// question in mark_task_done. Prevents the LLM from supplying that field on
+// its own initiative by pattern-matching an unrelated prior exchange in
+// conversation history (observed in testing): a value is only trusted if a
+// matching row here is consumed in the same call.
+model PendingClarification {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  field     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("pending_clarifications")
+}
