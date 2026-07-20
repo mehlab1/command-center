@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { QueryProvider } from "@/components/QueryProvider";
 import "./globals.css";
 
 const plexMono = IBM_Plex_Mono({
@@ -47,7 +48,7 @@ export default function RootLayout({
       className={`${plexMono.variable} ${plexSans.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-ink text-text font-body">
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

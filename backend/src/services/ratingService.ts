@@ -35,3 +35,39 @@ export async function rateTask(taskId: string, devId: string, rating: number): P
     }),
   ]);
 }
+
+export interface DevPerformance {
+  devId: string;
+  devName: string;
+  avgRating: number | null;
+  onTimePercent: number | null;
+  history: { rating: number; onTime: boolean; createdAt: Date; taskTitle: string }[];
+}
+
+// Dashboard Performance panel (docs/phases/phase-4-dashboard.md task 6).
+export async function getPerformanceSummary(): Promise<DevPerformance[]> {
+  const devs = await prisma.dev.findMany({
+    orderBy: { name: "asc" },
+    include: {
+      ratingsHistory: {
+        orderBy: { createdAt: "asc" },
+        include: { task: { select: { title: true } } },
+      },
+    },
+  });
+
+  return devs.map((dev) => {
+    const history = dev.ratingsHistory.map((r) => ({
+      rating: r.rating,
+      onTime: r.onTime,
+      createdAt: r.createdAt,
+      taskTitle: r.task.title,
+    }));
+    const avgRating =
+      history.length > 0 ? history.reduce((sum, h) => sum + h.rating, 0) / history.length : null;
+    const onTimePercent =
+      history.length > 0 ? (history.filter((h) => h.onTime).length / history.length) * 100 : null;
+
+    return { devId: dev.id, devName: dev.name, avgRating, onTimePercent, history };
+  });
+}

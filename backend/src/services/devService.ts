@@ -4,6 +4,7 @@ import { Dev, EmploymentType, TaskStatus } from "@prisma/client";
 export interface DevWithComputed extends Dev {
   isLead: boolean;
   isAssigned: boolean;
+  openTaskCount: number;
 }
 
 // Per docs/01-data-model.md: lead status and assigned status are NEVER
@@ -13,16 +14,15 @@ export async function isDevLead(devId: string): Promise<boolean> {
   return count > 0;
 }
 
-export async function isDevAssigned(devId: string): Promise<boolean> {
-  const count = await prisma.task.count({
+export async function getOpenTaskCount(devId: string): Promise<number> {
+  return prisma.task.count({
     where: { status: { not: TaskStatus.DONE }, assignees: { some: { devId } } },
   });
-  return count > 0;
 }
 
 export async function withComputed(dev: Dev): Promise<DevWithComputed> {
-  const [isLead, isAssigned] = await Promise.all([isDevLead(dev.id), isDevAssigned(dev.id)]);
-  return { ...dev, isLead, isAssigned };
+  const [isLead, openTaskCount] = await Promise.all([isDevLead(dev.id), getOpenTaskCount(dev.id)]);
+  return { ...dev, isLead, isAssigned: openTaskCount > 0, openTaskCount };
 }
 
 export async function listDevs(): Promise<DevWithComputed[]> {

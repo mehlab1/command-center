@@ -21,6 +21,18 @@ export async function getQaEntryByTaskId(taskId: string) {
   return prisma.qaQueueEntry.findUnique({ where: { taskId } });
 }
 
+// Dashboard QA panel (docs/phases/phase-4-dashboard.md task 4).
+export async function listQaQueueEntries() {
+  return prisma.qaQueueEntry.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      task: { select: { id: true, title: true, deadline: true } },
+      suggestedReviewer: { select: { id: true, name: true } },
+      assignedReviewer: { select: { id: true, name: true } },
+    },
+  });
+}
+
 // Suggestion only — assignment always requires this explicit call, never
 // auto-commits (docs/04-workflows.md).
 export async function assignQaReviewer(qaEntryId: string, reviewerDevId: string): Promise<QaQueueEntry> {

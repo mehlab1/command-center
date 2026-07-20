@@ -30,3 +30,69 @@ export interface TaskDTO {
   project: { id: string; name: string } | null;
   qaQueueEntry: { status: "UNASSIGNED" | "ASSIGNED" | "PASSED" | "SENT_BACK" } | null;
 }
+
+export type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
+
+export interface ProjectDTO {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  status: ProjectStatus;
+  deadline: string | null;
+  taskCount: number;
+  assignedTaskCount: number;
+}
+
+export interface DevDTO {
+  id: string;
+  name: string;
+  designation: string | null;
+  employmentType: "PERMANENT" | "INTERN";
+  podId: string | null;
+  isLead: boolean;
+  isAssigned: boolean;
+  openTaskCount: number;
+}
+
+export interface PodDTO {
+  id: string;
+  name: string;
+  leadDevId: string;
+  lead: DevDTO;
+  members: DevDTO[];
+}
+
+export type QaStatus = "UNASSIGNED" | "ASSIGNED" | "PASSED" | "SENT_BACK";
+
+export interface QaEntryDTO {
+  id: string;
+  status: QaStatus;
+  outcomeNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  task: { id: string; title: string; deadline: string };
+  suggestedReviewer: { id: string; name: string } | null;
+  assignedReviewer: { id: string; name: string } | null;
+}
+
+export interface DeadlineRadarItem {
+  kind: "task" | "project";
+  id: string;
+  title: string;
+  deadline: string;
+}
+
+export interface DeadlineRadarDTO {
+  overdue: DeadlineRadarItem[];
+  dueWithin1h: DeadlineRadarItem[];
+  dueWithin24h: DeadlineRadarItem[];
+}
+
+export interface DevPerformanceDTO {
+  devId: string;
+  devName: string;
+  avgRating: number | null;
+  onTimePercent: number | null;
+  history: { rating: number; onTime: boolean; createdAt: string; taskTitle: string }[];
+}

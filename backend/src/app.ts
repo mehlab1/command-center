@@ -7,6 +7,7 @@ import { authRouter } from "./routes/auth";
 import { chatRouter } from "./routes/chat";
 import { auditLogRouter } from "./routes/auditLog";
 import { entitiesRouter } from "./routes/entities";
+import { dashboardRouter } from "./routes/dashboard";
 import { errorHandler } from "./middleware/errorHandler";
 
 export function createApp() {
@@ -20,6 +21,7 @@ export function createApp() {
   app.use("/api/auth", authRouter);
   app.use("/api/chat", chatRouter);
   app.use("/api/audit-log", auditLogRouter);
+  app.use("/api/dashboard", dashboardRouter);
   app.use("/api", entitiesRouter);
 
   app.use((_req, res) => {

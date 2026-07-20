@@ -1,13 +1,15 @@
-// Minimal, functional-not-polished per Phase 3 — enough to verify task state
-// changes visually. Full dashboard polish is Phase 4.
+// Board/list toggle functional since Phase 3; filter + sort added in Phase 4
+// per docs/phases/phase-4-dashboard.md task 3.
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { useMemo, useState } from "react";
+import { useTasks, useDevs } from "@/lib/queries";
+import { useColdStartBanner } from "@/lib/useColdStartBanner";
 import { StatusTag } from "@/components/StatusTag";
 import { TaskDTO, TaskStatus } from "@/lib/types";
 
 const COLUMNS: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
+type SortKey = "deadline" | "status";
 
 function TaskRow({ task }: { task: TaskDTO }) {
   const who = task.isPersonal ? "personal" : task.assignees.map((a) => a.dev.name).join(", ") || "unassigned";
@@ -34,14 +36,30 @@ function TaskRow({ task }: { task: TaskDTO }) {
 }
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<TaskDTO[] | null>(null);
-  const [view, setView] = useState<"kanban" | "table">("kanban");
+  const tasksQuery = useTasks();
+  const devsQuery = useDevs();
+  const waking = useColdStartBanner([tasksQuery, devsQuery]);
 
-  useEffect(() => {
-    apiFetch("/api/tasks")
-      .then((res) => (res.ok ? res.json() : []))
-      .then(setTasks);
-  }, []);
+  const [view, setView] = useState<"kanban" | "table">("kanban");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("deadline");
+
+  const tasks = tasksQuery.data;
+  const devs = devsQuery.data;
+
+  const filtered = useMemo(() => {
+    if (!tasks) return [];
+    let result = tasks;
+    if (assigneeFilter === "personal") {
+      result = result.filter((t) => t.isPersonal);
+    } else if (assigneeFilter !== "all") {
+      result = result.filter((t) => t.assignees.some((a) => a.dev.id === assigneeFilter));
+    }
+    return [...result].sort((a, b) => {
+      if (sortKey === "deadline") return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      return COLUMNS.indexOf(a.status) - COLUMNS.indexOf(b.status);
+    });
+  }, [tasks, assigneeFilter, sortKey]);
 
   return (
     <div className="flex-1 p-4">
@@ -63,23 +81,56 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {tasks === null && <p className="text-sm text-text-muted">Loading…</p>}
+      <div className="flex gap-2 mb-3">
+        <select
+          value={assigneeFilter}
+          onChange={(e) => setAssigneeFilter(e.target.value)}
+          className="flex-1 rounded-sm border border-line bg-paper px-2 py-1.5 text-xs text-text"
+        >
+          <option value="all">All assignees</option>
+          <option value="personal">Personal</option>
+          {devs?.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className="rounded-sm border border-line bg-paper px-2 py-1.5 text-xs text-text"
+        >
+          <option value="deadline">Sort: deadline</option>
+          <option value="status">Sort: status</option>
+        </select>
+      </div>
+
+      {waking && (
+        <p role="status" className="text-sm text-text-muted mb-2">
+          Waking things up — this happens after a bit of inactivity, just a few more seconds.
+        </p>
+      )}
+
+      {tasksQuery.isLoading && <p className="text-sm text-text-muted">Loading…</p>}
       {tasks?.length === 0 && (
         <p className="text-sm text-text-muted">No tasks yet — tell the agent about your first one.</p>
       )}
+      {tasks && tasks.length > 0 && filtered.length === 0 && (
+        <p className="text-sm text-text-muted">No tasks match this filter.</p>
+      )}
 
-      {tasks && tasks.length > 0 && view === "table" && (
+      {filtered.length > 0 && view === "table" && (
         <div className="flex flex-col gap-2">
-          {tasks.map((t) => (
+          {filtered.map((t) => (
             <TaskRow key={t.id} task={t} />
           ))}
         </div>
       )}
 
-      {tasks && tasks.length > 0 && view === "kanban" && (
+      {filtered.length > 0 && view === "kanban" && (
         <div className="flex flex-col gap-4">
           {COLUMNS.map((status) => {
-            const inColumn = tasks.filter((t) => t.status === status);
+            const inColumn = filtered.filter((t) => t.status === status);
             if (inColumn.length === 0) return null;
             return (
               <div key={status}>
