@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { StatusTag } from "@/components/StatusTag";
+import { formatDateTime } from "@/lib/dateFormat";
 
 interface AuditLogEntry {
   id: string;
@@ -36,7 +37,7 @@ export default function AuditLogPage() {
             <div className="flex items-center gap-2">
               <StatusTag kind={e.actionType} />
               <p className="text-xs text-text-muted">
-                {e.entityType} · {e.source} · {new Date(e.createdAt).toLocaleString()}
+                {e.entityType} · {e.source} · {formatDateTime(e.createdAt)}
               </p>
             </div>
             <p className="text-sm text-text mt-1.5">{e.summary}</p>

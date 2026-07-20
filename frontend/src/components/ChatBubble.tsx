@@ -1,7 +1,8 @@
 import { ChatMessageDTO } from "@/lib/types";
+import { APP_TIMEZONE } from "@/lib/dateFormat";
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("en-US", { timeZone: APP_TIMEZONE, hour: "2-digit", minute: "2-digit" });
 }
 
 export function ChatBubble({ message }: { message: ChatMessageDTO }) {

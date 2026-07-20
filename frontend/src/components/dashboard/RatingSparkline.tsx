@@ -1,3 +1,5 @@
+import { formatDate } from "@/lib/dateFormat";
+
 interface Point {
   rating: number;
   createdAt: string;
@@ -30,7 +32,7 @@ export function RatingSparkline({ history }: { history: Point[] }) {
       {points.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={3} fill="var(--signal)">
           <title>
-            {p.h.taskTitle}: {p.h.rating}/5 ({new Date(p.h.createdAt).toLocaleDateString()})
+            {p.h.taskTitle}: {p.h.rating}/5 ({formatDate(p.h.createdAt)})
           </title>
         </circle>
       ))}

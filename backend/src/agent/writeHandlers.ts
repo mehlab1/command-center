@@ -5,6 +5,7 @@ import { getPodLedBy } from "../services/podService";
 import { getTaskById } from "../services/taskService";
 import { assertRatable, NotRatableError } from "../services/ratingService";
 import { prisma } from "../lib/prisma";
+import { formatDeadline } from "../lib/dateFormat";
 
 // See PendingClarification in schema.prisma for why this exists.
 async function setPendingClarification(taskId: string, field: string): Promise<void> {
@@ -56,7 +57,7 @@ export async function prepareCreateProject(args: Record<string, unknown>): Promi
   if (!name) return { status: "need_field", message: "What should the project be called?" };
 
   const deadline = args.deadline as string | undefined;
-  const summary = `Create project "${name}"${args.category ? ` (${args.category})` : ""}${deadline ? `, deadline ${deadline}` : ""}.`;
+  const summary = `Create project "${name}"${args.category ? ` (${args.category})` : ""}${deadline ? `, deadline ${formatDeadline(deadline)}` : ""}.`;
   return {
     status: "ready",
     resolvedArgs: { name, description: args.description, category: args.category, deadline },
@@ -82,7 +83,7 @@ export async function prepareEditProject(args: Record<string, unknown>): Promise
   const changes: string[] = [];
   if (args.name) changes.push(`name → "${args.name}"`);
   if (args.status) changes.push(`status → ${args.status}`);
-  if (args.deadline) changes.push(`deadline → ${args.deadline}`);
+  if (args.deadline) changes.push(`deadline → ${formatDeadline(args.deadline as string)}`);
   if (args.description) changes.push("description updated");
   if (args.category) changes.push(`category → "${args.category}"`);
 
@@ -357,7 +358,7 @@ export async function prepareCreateTask(args: Record<string, unknown>): Promise<
   if (project && "error" in project) return { status: "unresolved", message: project.error };
 
   const who = isPersonal ? "personal" : assignees.map((a) => a.name).join(", ");
-  const summary = `Create task "${title}" (${who}), due ${deadline}${
+  const summary = `Create task "${title}" (${who}), due ${formatDeadline(deadline)}${
     project ? ` in ${project.name}` : ""
   }${needsQa ? ", needs QA" : ""}.`;
 
@@ -412,7 +413,7 @@ export async function prepareMarkTaskBlocked(args: Record<string, unknown>): Pro
   return {
     status: "ready",
     resolvedArgs: { id: resolved.id, blockerDescription, revisedDeadline },
-    summary: `Mark "${resolved.name}" blocked: ${blockerDescription} (revised deadline ${revisedDeadline}).`,
+    summary: `Mark "${resolved.name}" blocked: ${blockerDescription} (revised deadline ${formatDeadline(revisedDeadline)}).`,
   };
 }
 

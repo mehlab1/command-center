@@ -1,3 +1,5 @@
+import { formatDate } from "@/lib/dateFormat";
+
 interface Point {
   onTime: boolean;
   createdAt: string;
@@ -18,7 +20,7 @@ export function OnTimeSequence({ history }: { history: Point[] }) {
           key={i}
           className="inline-block w-2.5 h-2.5 rounded-full"
           style={{ backgroundColor: h.onTime ? "var(--done)" : "var(--blocked)" }}
-          title={`${h.taskTitle}: ${h.onTime ? "on time" : "missed deadline"} (${new Date(h.createdAt).toLocaleDateString()})`}
+          title={`${h.taskTitle}: ${h.onTime ? "on time" : "missed deadline"} (${formatDate(h.createdAt)})`}
         />
       ))}
     </div>

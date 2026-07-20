@@ -6,6 +6,7 @@ import { resolveEntity } from "./disambiguation";
 import { ALL_TOOLS, READ_TOOL_NAMES, SYSTEM_PROMPT, WRITE_TOOL_NAMES } from "./tools";
 import { WRITE_PREPARERS } from "./writeHandlers";
 import { executeWrite } from "./execute";
+import { APP_TIMEZONE, APP_UTC_OFFSET } from "../lib/dateFormat";
 
 const MAX_ITERATIONS = 4;
 const HISTORY_WINDOW = 20;
@@ -71,7 +72,17 @@ export async function handleUserMessage(content: string): Promise<OrchestratorRe
 
   const history = await recentHistoryAsLlmMessages();
   const now = new Date();
-  let systemWithClock = `${SYSTEM_PROMPT}\n\nCurrent date/time (use this for any relative date the user mentions — "tomorrow", "in 5 days", "next week", etc — never guess or use your training cutoff): ${now.toISOString()} (${now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })})`;
+  const nowInKarachi = now.toLocaleString("en-US", {
+    timeZone: APP_TIMEZONE,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  let systemWithClock = `${SYSTEM_PROMPT}\n\nCurrent date/time in Mehlab's timezone, Pakistan Standard Time (${APP_TIMEZONE}, always ${APP_UTC_OFFSET}, no DST): ${nowInKarachi}. Use this for any relative date/time the user mentions ("tomorrow", "in 5 days", "11pm tonight", etc) — never guess or use your training cutoff.\n\nWhenever you produce an ISO 8601 datetime value for any tool argument (deadline, revised_deadline, etc), you MUST include the explicit ${APP_UTC_OFFSET} offset, e.g. "2026-07-23T23:00:00${APP_UTC_OFFSET}" for 11pm Mehlab's time. Never emit a bare/naive datetime and never use "Z"/UTC — Mehlab always means his own local time (Pakistan) when he states a time, even though the current-time value above is shown to you already converted to that zone for convenience. A date with no specific time (just "in 3 days") can be a plain date "2026-07-23" with no time component at all.`;
 
   // If a proposal is still awaiting confirmation, nothing has been written
   // yet — the LLM has no other way to know this, and without it a

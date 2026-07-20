@@ -7,6 +7,7 @@ import { useTasks, useDevs } from "@/lib/queries";
 import { useColdStartBanner } from "@/lib/useColdStartBanner";
 import { StatusTag } from "@/components/StatusTag";
 import { TaskDTO, TaskStatus } from "@/lib/types";
+import { formatDeadline } from "@/lib/dateFormat";
 
 const COLUMNS: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
 type SortKey = "deadline" | "status";
@@ -27,7 +28,7 @@ function TaskRow({ task }: { task: TaskDTO }) {
       </div>
       <p className="text-sm text-text font-medium">{task.title}</p>
       <p className={`text-xs ${overdue ? "text-blocked" : "text-text-muted"}`}>
-        {who} · due {new Date(task.deadline).toLocaleDateString()}
+        {who} · due {formatDeadline(task.deadline)}
         {task.project ? ` · ${task.project.name}` : ""}
         {overdue ? " · overdue" : ""}
       </p>

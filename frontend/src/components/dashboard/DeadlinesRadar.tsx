@@ -2,13 +2,14 @@
 
 import { useDeadlineRadar } from "@/lib/queries";
 import { DeadlineRadarItem } from "@/lib/types";
+import { formatDeadline } from "@/lib/dateFormat";
 
 function Row({ item }: { item: DeadlineRadarItem }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1">
       <span className="text-sm text-text">{item.title}</span>
       <span className="text-xs text-text-muted">
-        {item.kind} · {new Date(item.deadline).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+        {item.kind} · {formatDeadline(item.deadline)}
       </span>
     </div>
   );
