@@ -61,23 +61,27 @@ const WRITE_TOOLS: LlmTool[] = [
       type: "object",
       properties: {
         project_query: { type: "string" },
-        cascade_tasks: { type: "boolean", description: "true = delete the project's tasks too, false = keep tasks, just unlink them from the project" },
+        cascade_tasks: { type: "boolean", description: "true = delete the project's tasks too, false = keep tasks, just unlink them from the project. Only set this if the user actually said which they want — never guess or default to either, omit entirely if unstated." },
       },
-      required: ["project_query", "cascade_tasks"],
+      required: ["project_query"],
     },
   },
   {
     name: "create_dev",
-    description: "Add a brand-new dev who doesn't exist yet. Do NOT use this if the user is changing something about a dev who already exists (e.g. 'change X's designation', 'X is now a permanent hire') — use edit_dev for that instead.",
+    description: "Add a brand-new dev who doesn't exist yet. Do NOT use this if the user is changing something about a dev who already exists (e.g. 'change X's designation', 'X is now a permanent hire') — use edit_dev for that instead. If the user is adding several devs in one message and only some of them have a stated employment type, treat every dev independently: do NOT copy another dev's stated PERMANENT/INTERN onto this one just because they were mentioned in the same sentence or list. Each create_dev call's employment_type reflects only what was said about that exact person.",
     parameters: {
       type: "object",
       properties: {
         name: { type: "string" },
         designation: { type: "string" },
-        employment_type: { type: "string", enum: ["PERMANENT", "INTERN"] },
+        employment_type: {
+          type: "string",
+          enum: ["PERMANENT", "INTERN"],
+          description: "Only set this if the user actually said permanent/intern for THIS specific named person, in a clause that names them (or unambiguously refers only to them). If another dev mentioned nearby has a stated employment_type, that value does NOT carry over to this one — omit this field entirely unless THIS person's status was stated.",
+        },
         internship_end_date: { type: "string", description: "ISO 8601 date, only relevant for interns" },
       },
-      required: ["name", "employment_type"],
+      required: ["name"],
     },
   },
   {
@@ -156,9 +160,9 @@ const WRITE_TOOLS: LlmTool[] = [
         is_personal: { type: "boolean" },
         assignee_dev_queries: { type: "array", items: { type: "string" }, description: "Up to 2 devs" },
         deadline: { type: "string", description: "ISO 8601 date, required" },
-        needs_qa: { type: "boolean" },
+        needs_qa: { type: "boolean", description: "Whether this task needs a QA review before it can be marked done. Only set this if the user actually stated it — never guess true or false as a 'safe default', omit entirely if unstated." },
       },
-      required: ["title", "deadline", "needs_qa"],
+      required: ["title", "deadline"],
     },
   },
   {
@@ -180,7 +184,7 @@ const WRITE_TOOLS: LlmTool[] = [
         blocker_description: { type: "string" },
         revised_deadline: { type: "string", description: "ISO 8601 date — omit entirely if the user did not state one, never estimate it" },
       },
-      required: ["task_query", "blocker_description", "revised_deadline"],
+      required: ["task_query"],
     },
   },
   {
@@ -211,10 +215,10 @@ const WRITE_TOOLS: LlmTool[] = [
       type: "object",
       properties: {
         task_query: { type: "string" },
-        outcome: { type: "string", enum: ["PASSED", "SENT_BACK"] },
+        outcome: { type: "string", enum: ["PASSED", "SENT_BACK"], description: "Only set this if the user actually stated the outcome — PASSED is not a safe default, omit entirely if unstated." },
         outcome_notes: { type: "string" },
       },
-      required: ["task_query", "outcome"],
+      required: ["task_query"],
     },
   },
   {
@@ -225,9 +229,9 @@ const WRITE_TOOLS: LlmTool[] = [
       properties: {
         task_query: { type: "string" },
         dev_query: { type: "string", description: "Which assignee this rating is for — required if the task has more than one assignee" },
-        rating: { type: "integer", minimum: 1, maximum: 5 },
+        rating: { type: "integer", minimum: 1, maximum: 5, description: "Only set this if the user actually stated a numeric rating — never guess a middling value, omit entirely if unstated." },
       },
-      required: ["task_query", "rating"],
+      required: ["task_query"],
     },
   },
 ];
@@ -243,7 +247,7 @@ Rules you must follow exactly:
 - Never confuse creating something new with changing something that already exists. If the user names an existing dev/project/pod and wants a detail about them changed (designation, deadline, name, status — anything), that is always an edit_*/reassign_* call, never a create_* call, even if they don't use the word "edit" (e.g. "Ehsan's designation is now Senior Engineer" means edit_dev, not create_dev). Only call a create_* tool when the user is clearly introducing something that doesn't exist yet.
 - If a name mentioned (a dev, project, or pod) is ambiguous or unclear, prefer letting the system's resolution handle it — just pass through the name as the user said it (e.g. "project_query": "the marketing site"). Never invent or guess a fuller/different name than what the user actually said.
 - If required information for a tool is genuinely missing from the conversation (not a name to resolve, but a real missing field like employment_type), ask the user directly in plain text instead of guessing.
-- Never invent a plausible-looking value (a date, a number, a name) for a field the user did not actually state, even if it would make the tool call "complete." Omit that field from the call entirely — the system will notice it's missing and ask for it. This matters most for dates: if the user gives a relative date for one field (e.g. a deadline) but not another (e.g. a revised deadline on a blocked task), do not reuse, estimate, or extrapolate a date for the field they didn't mention.
+- Never invent a plausible-looking value (a date, a number, a name, an enum choice like PERMANENT/INTERN) for a field the user did not actually state, even if it would make the tool call "complete," even if it's the statistically common answer, and even if a nearby item in the same message happened to have that value. "This is probably what they meant" is still guessing. Omit that field from the call entirely — the system will notice it's missing and ask for it. This matters most for dates: if the user gives a relative date for one field (e.g. a deadline) but not another (e.g. a revised deadline on a blocked task), do not reuse, estimate, or extrapolate a date for the field they didn't mention.
 - Keep replies short and plain. No markdown headers, no bullet-point walls, sentence case.
 - If the user pastes something that looks like a secret/credential/API key, do not include it in any tool call — tell them the Vault has a secure entry path for that instead (not available yet in this phase).
 - There is no edit_task tool, ever — this is deliberate, not missing. If the user wants to change a task's title, deadline, assignees, or description, the correct flow is delete_task then a fresh create_task, and you should say so plainly rather than looking for an edit tool that doesn't exist. Status changes (blocked/done) go through mark_task_blocked/mark_task_done, which are not edits in this sense.`;

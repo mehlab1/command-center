@@ -44,12 +44,12 @@ chatRouter.post("/cancel", async (req, res) => {
     return;
   }
 
-  const ok = await cancelPendingAction(parsed.data.pendingActionId);
-  if (!ok) {
+  const result = await cancelPendingAction(parsed.data.pendingActionId);
+  if (!result) {
     res.status(404).json({ error: "That confirmation has expired or was already handled." });
     return;
   }
-  res.status(204).send();
+  res.status(200).json(result);
 });
 
 chatRouter.get("/messages", async (_req, res) => {

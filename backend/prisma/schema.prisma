@@ -354,3 +354,22 @@ model PendingClarification {
 
   @@map("pending_clarifications")
 }
+
+// Holds the rest of a multi-entity request ("add devs A, B, C, D, all
+// permanent") once every item is fully resolved — item 1 becomes the active
+// PendingAction as usual, items 2..N sit here in order. Consuming one (on
+// confirm OR cancel of the current PendingAction) promotes the next item to
+// a fresh PendingAction automatically, so the user works through the whole
+// batch one confirmation at a time without re-typing anything.
+model PendingBatchQueue {
+  id           String   @id @default(uuid())
+  order        Int
+  position     Int // 1-indexed display position within the original batch
+  total        Int // total item count in the original batch
+  toolName     String   @map("tool_name")
+  resolvedArgs Json     @map("resolved_args")
+  summary      String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("pending_batch_queue")
+}

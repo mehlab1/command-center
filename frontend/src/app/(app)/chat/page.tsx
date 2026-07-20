@@ -84,6 +84,18 @@ export default function ChatPage() {
     }
   }
 
+  // Shared by confirm/cancel: if the backend says another batch item is
+  // queued (multiple entities described in one message), show its
+  // confirmation card immediately instead of clearing back to the input —
+  // that's what lets the user work through a whole batch one at a time.
+  function applyNext(next: { message: string; pendingActionId: string } | undefined) {
+    if (next) {
+      setPending({ id: next.pendingActionId, toolName: "", summary: next.message, createdAt: new Date().toISOString() });
+    } else {
+      setPending(null);
+    }
+  }
+
   async function handleConfirm() {
     if (!pending) return;
     setConfirmBusy(true);
@@ -103,8 +115,8 @@ export default function ChatPage() {
           createdAt: new Date().toISOString(),
         },
       ]);
+      applyNext(data?.next);
     } finally {
-      setPending(null);
       setConfirmBusy(false);
     }
   }
@@ -113,11 +125,12 @@ export default function ChatPage() {
     if (!pending) return;
     setConfirmBusy(true);
     try {
-      await apiFetch("/api/chat/cancel", {
+      const res = await apiFetch("/api/chat/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pendingActionId: pending.id }),
       });
+      const data = res.ok ? await res.json() : null;
       setMessages((prev) => [
         ...prev,
         {
@@ -127,8 +140,8 @@ export default function ChatPage() {
           createdAt: new Date().toISOString(),
         },
       ]);
+      applyNext(data?.next);
     } finally {
-      setPending(null);
       setConfirmBusy(false);
     }
   }
