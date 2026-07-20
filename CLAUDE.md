@@ -74,20 +74,32 @@ try to hold all of them in context at once.
 /docs               this plan (not shipped, reference only)
 ```
 
-## Commands (fill in once scaffolded, keep this section accurate)
+## Commands
 
 ```
-# Backend
-cd backend && npm run dev
-cd backend && npm run test
-cd backend && npx prisma migrate dev
-cd backend && npx prisma studio
+# Backend (Express + TypeScript — chosen over NestJS: single-user app, no need
+# for NestJS's DI/module ceremony; Express + a thin service layer keeps Phase 1
+# lean. Prisma pinned to 6.x, not 7.x — Prisma 7 moved datasource url/directUrl
+# out of schema.prisma into a separate prisma.config.ts, which doesn't match
+# the documented schema.prisma pattern in docs/02-database-schema.md.)
+cd backend && npm run dev              # ts-node-dev, http://localhost:4000
+cd backend && npm run build && npm start
+cd backend && npm test
+cd backend && npm run prisma:migrate   # prisma migrate dev (uses DIRECT_URL)
+cd backend && npm run prisma:deploy    # prisma migrate deploy (for CI/Render)
+cd backend && npm run prisma:seed
+cd backend && npm run prisma:studio
 
-# Frontend
-cd frontend && npm run dev
+# Frontend (Next.js App Router, TypeScript, Tailwind v4 — Next 16, see
+# frontend/AGENTS.md before assuming pre-16 API shapes)
+cd frontend && npm run dev             # http://localhost:3000
 cd frontend && npm run build
 cd frontend && npm run lint
 ```
+
+Env files: copy `backend/.env.example` → `backend/.env` and
+`frontend/.env.local.example` → `frontend/.env.local`, then fill in real values
+from `docs/00-human-setup-tasks.md`. Never commit either `.env` file.
 
 ## How to use the docs/ folder
 

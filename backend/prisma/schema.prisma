@@ -1,0 +1,300 @@
+// FinovaSolutions Command Center — Prisma schema
+// Source of truth for shape: docs/01-data-model.md
+// Connection-string split (DATABASE_URL pooled / DIRECT_URL unpooled): docs/02-database-schema.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth (not in docs/01-data-model.md — added for Phase 1 single-user login;
+// separate from `devs`, which are the managed people/team data, not app users)
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Core domain
+// ---------------------------------------------------------------------------
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  category    String?
+  status      ProjectStatus @default(ACTIVE)
+  deadline    DateTime?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  tasks     Task[]
+  reminders Reminder[]
+
+  @@index([status])
+  @@index([deadline])
+  @@map("projects")
+}
+
+enum EmploymentType {
+  PERMANENT
+  INTERN
+}
+
+model Dev {
+  id                String         @id @default(uuid())
+  name              String
+  designation       String?
+  employmentType    EmploymentType @map("employment_type")
+  internshipEndDate DateTime?      @map("internship_end_date")
+  podId             String?        @map("pod_id")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  pod                Pod?             @relation("PodMembers", fields: [podId], references: [id])
+  ledPod             Pod?             @relation("PodLead")
+  taskAssignees      TaskAssignee[]
+  ratingsHistory     RatingsHistory[]
+  suggestedQaEntries QaQueueEntry[]   @relation("SuggestedReviewer")
+  assignedQaEntries  QaQueueEntry[]   @relation("AssignedReviewer")
+
+  @@index([podId])
+  @@map("devs")
+}
+
+model Pod {
+  id        String   @id @default(uuid())
+  name      String
+  leadDevId String   @unique @map("lead_dev_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lead    Dev   @relation("PodLead", fields: [leadDevId], references: [id])
+  members Dev[] @relation("PodMembers")
+
+  @@map("pods")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  BLOCKED
+}
+
+model Task {
+  id                 String     @id @default(uuid())
+  title              String
+  description        String?
+  notes              String?
+  projectId          String?    @map("project_id")
+  isPersonal         Boolean    @default(false) @map("is_personal")
+  status             TaskStatus @default(TODO)
+  deadline           DateTime
+  blockerDescription String?    @map("blocker_description")
+  revisedDeadline    DateTime?  @map("revised_deadline")
+  missedDeadline     Boolean?   @map("missed_deadline")
+  needsQa            Boolean    @default(false) @map("needs_qa")
+  supersededByTaskId String?    @unique @map("superseded_by_task_id")
+  supersedesTaskId   String?    @unique @map("supersedes_task_id")
+  rating             Int?
+  completedAt        DateTime?  @map("completed_at")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  project        Project?         @relation(fields: [projectId], references: [id])
+  assignees      TaskAssignee[]
+  qaQueueEntry   QaQueueEntry?
+  ratingsHistory RatingsHistory[]
+  reminders      Reminder[]
+
+  // supersededByTaskId / supersedesTaskId are a denormalized pointer pair
+  // (docs/01-data-model.md) rather than a single Prisma relation — kept as
+  // plain scalar columns, resolved by the service layer, not a self-relation.
+
+  @@index([status])
+  @@index([deadline])
+  @@index([projectId])
+  @@map("tasks")
+}
+
+model TaskAssignee {
+  taskId String @map("task_id")
+  devId  String @map("dev_id")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  dev  Dev  @relation(fields: [devId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, devId])
+  @@index([devId])
+  @@map("task_assignees")
+}
+
+enum QaStatus {
+  UNASSIGNED
+  ASSIGNED
+  PASSED
+  SENT_BACK
+}
+
+model QaQueueEntry {
+  id                     String    @id @default(uuid())
+  taskId                 String    @unique @map("task_id")
+  status                 QaStatus  @default(UNASSIGNED)
+  suggestedReviewerDevId String?   @map("suggested_reviewer_dev_id")
+  assignedReviewerDevId  String?   @map("assigned_reviewer_dev_id")
+  outcomeNotes           String?   @map("outcome_notes")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  resolvedAt             DateTime? @map("resolved_at")
+
+  task              Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  suggestedReviewer Dev? @relation("SuggestedReviewer", fields: [suggestedReviewerDevId], references: [id])
+  assignedReviewer  Dev? @relation("AssignedReviewer", fields: [assignedReviewerDevId], references: [id])
+
+  @@index([status])
+  @@map("qa_queue_entries")
+}
+
+model RatingsHistory {
+  id        String   @id @default(uuid())
+  devId     String   @map("dev_id")
+  taskId    String   @map("task_id")
+  rating    Int
+  onTime    Boolean  @map("on_time")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  dev  Dev  @relation(fields: [devId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([devId])
+  @@index([taskId])
+  @@map("ratings_history")
+}
+
+model VaultItem {
+  id                   String   @id @default(uuid())
+  name                 String
+  folder               String?
+  tags                 String[]
+  secretValueEncrypted Bytes    @map("secret_value_encrypted")
+  notes                String?
+  fileAttachmentUrl    String?  @map("file_attachment_url")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@index([folder])
+  @@map("vault_items")
+}
+
+enum ReminderChannel {
+  PUSH
+  WHATSAPP
+}
+
+// docs/01-data-model.md flags fire_times as a candidate for normalization into
+// a child table so each occurrence can track sent/cancelled independently —
+// implemented that way here (ReminderOccurrence), per the doc's own recommendation.
+model Reminder {
+  id              String          @id @default(uuid())
+  linkedTaskId    String?         @map("linked_task_id")
+  linkedProjectId String?         @map("linked_project_id")
+  message         String
+  channel         ReminderChannel @default(PUSH)
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  linkedTask    Task?                @relation(fields: [linkedTaskId], references: [id])
+  linkedProject Project?             @relation(fields: [linkedProjectId], references: [id])
+  occurrences   ReminderOccurrence[]
+
+  @@index([linkedTaskId])
+  @@index([linkedProjectId])
+  @@map("reminders")
+}
+
+enum ReminderOccurrenceStatus {
+  SCHEDULED
+  SENT
+  CANCELLED
+}
+
+model ReminderOccurrence {
+  id         String                   @id @default(uuid())
+  reminderId String                   @map("reminder_id")
+  fireTime   DateTime                 @map("fire_time")
+  status     ReminderOccurrenceStatus @default(SCHEDULED)
+
+  reminder Reminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+
+  @@index([status, fireTime])
+  @@index([reminderId])
+  @@map("reminder_occurrences")
+}
+
+enum AuditActionType {
+  CREATE
+  EDIT
+  DELETE
+}
+
+enum AuditSource {
+  CHAT
+  DASHBOARD
+}
+
+model AuditLog {
+  id         String          @id @default(uuid())
+  actionType AuditActionType @map("action_type")
+  entityType String          @map("entity_type")
+  entityId   String          @map("entity_id")
+  summary    String
+  diff       Json?
+  source     AuditSource
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+enum ChatRole {
+  USER
+  AGENT
+}
+
+model ChatMessage {
+  id              String   @id @default(uuid())
+  role            ChatRole
+  content         String
+  linkedEntityIds String[] @map("linked_entity_ids")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+model Setting {
+  key   String @id
+  value String
+
+  @@map("settings")
+}

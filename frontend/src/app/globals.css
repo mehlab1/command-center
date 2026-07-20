@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #12172b;
+  --ink-muted: #5b6178;
+  --surface: #f7f8fb;
+  --surface-raised: #ffffff;
+  --border: #e2e4ee;
+  --accent: #4c4fe0;
+  --accent-contrast: #ffffff;
+
+  --status-todo: #6b7094;
+  --status-in-progress: #b7791f;
+  --status-done: #1e8e5a;
+  --status-blocked: #d0342c;
+  --status-on-time: #1e8e5a;
+  --status-overdue: #d0342c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f3f4f8;
+    --ink-muted: #a6abc2;
+    --surface: #0e1120;
+    --surface-raised: #171b30;
+    --border: #262b45;
+    --accent: #7b7eff;
+    --accent-contrast: #0e1120;
+  }
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+
+  --color-status-todo: var(--status-todo);
+  --color-status-in-progress: var(--status-in-progress);
+  --color-status-done: var(--status-done);
+  --color-status-blocked: var(--status-blocked);
+  --color-status-on-time: var(--status-on-time);
+  --color-status-overdue: var(--status-overdue);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --font-heading: var(--font-space-grotesk);
+  --font-body: var(--font-inter);
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
