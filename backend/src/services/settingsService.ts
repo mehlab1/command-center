@@ -32,7 +32,11 @@ export function isValidDigestTime(value: string): boolean {
   return HHMM_RE.test(value);
 }
 
+// Accepts either a plain phone number (with country code) or an
+// already-complete Green API group chat id ("<id>@g.us") — the latter
+// lets reminders go to a group instead of an individual chat.
 export function isValidWhatsAppNumber(value: string): boolean {
+  if (value.endsWith("@g.us")) return value.length > "@g.us".length;
   const digits = value.replace(/\D/g, "");
   return digits.length >= 8 && digits.length <= 15;
 }
