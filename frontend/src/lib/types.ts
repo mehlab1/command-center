@@ -21,11 +21,17 @@ export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE" | "BLOCKED";
 export interface TaskDTO {
   id: string;
   title: string;
+  description: string | null;
+  notes: string | null;
   status: TaskStatus;
   deadline: string;
   isPersonal: boolean;
   needsQa: boolean;
   missedDeadline: boolean | null;
+  blockerDescription: string | null;
+  revisedDeadline: string | null;
+  rating: number | null;
+  completedAt: string | null;
   assignees: { dev: { id: string; name: string } }[];
   project: { id: string; name: string } | null;
   qaQueueEntry: { status: "UNASSIGNED" | "ASSIGNED" | "PASSED" | "SENT_BACK" } | null;

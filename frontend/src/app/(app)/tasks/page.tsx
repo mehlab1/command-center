@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useTasks, useDevs } from "@/lib/queries";
 import { useColdStartBanner } from "@/lib/useColdStartBanner";
 import { StatusTag } from "@/components/StatusTag";
+import { CreateTaskModal } from "@/components/CreateTaskModal";
 import { TaskDTO, TaskStatus } from "@/lib/types";
 import { formatDeadline } from "@/lib/dateFormat";
 
@@ -17,7 +18,7 @@ function TaskRow({ task }: { task: TaskDTO }) {
   const overdue = task.status !== "DONE" && new Date(task.deadline) < new Date();
 
   return (
-    <div className="rounded-md border border-line bg-paper p-3 flex flex-col gap-1.5">
+    <a href={`/tasks/${task.id}`} className="block rounded-md border border-line bg-paper p-3 flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
         <StatusTag kind={task.status} />
         {task.needsQa && (
@@ -32,7 +33,7 @@ function TaskRow({ task }: { task: TaskDTO }) {
         {task.project ? ` · ${task.project.name}` : ""}
         {overdue ? " · overdue" : ""}
       </p>
-    </div>
+    </a>
   );
 }
 
@@ -44,6 +45,7 @@ export default function TasksPage() {
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("deadline");
+  const [creating, setCreating] = useState(false);
 
   const tasks = tasksQuery.data;
   const devs = devsQuery.data;
@@ -64,20 +66,28 @@ export default function TasksPage() {
 
   return (
     <div className="flex-1 p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 gap-2">
         <h1 className="font-heading text-xl text-text">Tasks</h1>
-        <div className="flex rounded-sm border border-line overflow-hidden">
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-sm border border-line overflow-hidden">
+            <button
+              onClick={() => setView("kanban")}
+              className={`px-3 py-1.5 text-xs font-heading ${view === "kanban" ? "bg-signal text-signal-contrast" : "text-text-muted"}`}
+            >
+              BOARD
+            </button>
+            <button
+              onClick={() => setView("table")}
+              className={`px-3 py-1.5 text-xs font-heading ${view === "table" ? "bg-signal text-signal-contrast" : "text-text-muted"}`}
+            >
+              LIST
+            </button>
+          </div>
           <button
-            onClick={() => setView("kanban")}
-            className={`px-3 py-1.5 text-xs font-heading ${view === "kanban" ? "bg-signal text-signal-contrast" : "text-text-muted"}`}
+            onClick={() => setCreating(true)}
+            className="btn-tactile btn-tactile-signal rounded-sm bg-signal text-signal-contrast px-3 py-1.5 text-xs font-semibold"
           >
-            BOARD
-          </button>
-          <button
-            onClick={() => setView("table")}
-            className={`px-3 py-1.5 text-xs font-heading ${view === "table" ? "bg-signal text-signal-contrast" : "text-text-muted"}`}
-          >
-            LIST
+            + Add
           </button>
         </div>
       </div>
@@ -148,6 +158,8 @@ export default function TasksPage() {
           })}
         </div>
       )}
+
+      {creating && <CreateTaskModal onClose={() => setCreating(false)} onCreated={() => setCreating(false)} />}
     </div>
   );
 }

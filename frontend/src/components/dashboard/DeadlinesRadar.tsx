@@ -6,12 +6,12 @@ import { formatDeadline } from "@/lib/dateFormat";
 
 function Row({ item }: { item: DeadlineRadarItem }) {
   return (
-    <div className="flex items-center justify-between gap-2 py-1">
+    <a href={`/${item.kind === "task" ? "tasks" : "projects"}/${item.id}`} className="flex items-center justify-between gap-2 py-1">
       <span className="text-sm text-text">{item.title}</span>
       <span className="text-xs text-text-muted">
         {item.kind} · {formatDeadline(item.deadline)}
       </span>
-    </div>
+    </a>
   );
 }
 
