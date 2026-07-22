@@ -37,7 +37,7 @@ jest.mock("./reminderService", () => ({
   markOccurrenceSent: jest.fn(),
 }));
 
-import { runCronTick } from "./notificationService";
+import { runCronTick, sendTestDigest } from "./notificationService";
 
 beforeEach(() => {
   // resetAllMocks (not just clearAllMocks) — several tests set custom
@@ -207,5 +207,36 @@ describe("runCronTick — daily digest content & WhatsApp delivery", () => {
 
     expect(summary.digestSent).toBe(true);
     expect(sendPushToAllDevices).toHaveBeenCalledWith(expect.objectContaining({ title: "Daily digest" }));
+  });
+});
+
+describe("sendTestDigest", () => {
+  function mockSettings(overrides: Record<string, string>) {
+    settingFindUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
+      const value = overrides[where.key];
+      return value !== undefined ? { value } : null;
+    });
+  }
+
+  it("reports not sent when no WhatsApp target is configured", async () => {
+    mockSettings({});
+
+    const result = await sendTestDigest();
+
+    expect(result).toEqual({ sent: false, target: null });
+    expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends immediately to the active target, ignoring the digest-time and once-per-day dedup checks", async () => {
+    mockSettings({ whatsapp_target_type: "group", whatsapp_group_id: "12345@g.us" });
+
+    const result = await sendTestDigest();
+
+    expect(result).toEqual({ sent: true, target: "12345@g.us" });
+    expect(sendWhatsAppMessage).toHaveBeenCalledWith("12345@g.us", expect.stringContaining("*Daily Digest"));
+    // Never touches NotificationLog — a test send must not burn or depend on
+    // the real digest's daily dedup slot.
+    expect(notificationLogCreate).not.toHaveBeenCalled();
+    expect(notificationLogFindUnique).not.toHaveBeenCalled();
   });
 });

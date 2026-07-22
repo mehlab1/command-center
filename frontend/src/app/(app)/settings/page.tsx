@@ -227,6 +227,8 @@ function SettingsForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [testState, setTestState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [testError, setTestError] = useState<string | null>(null);
 
   const digestValue = digestTime ?? current?.dailyDigestTime ?? "08:00";
   const targetValue = targetType ?? current?.whatsappTargetType ?? "number";
@@ -269,6 +271,20 @@ function SettingsForm() {
       setError("Couldn't save settings — check the digest time and WhatsApp details.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleTestDigest() {
+    setTestState("sending");
+    setTestError(null);
+    try {
+      const res = await apiFetch("/api/settings/whatsapp-test-digest", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Send failed");
+      setTestState("sent");
+    } catch (err) {
+      setTestState("error");
+      setTestError(err instanceof Error ? err.message : "Couldn't send the test digest.");
     }
   }
 
@@ -367,13 +383,28 @@ function SettingsForm() {
         </p>
       )}
 
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="btn-tactile flex-1 rounded-sm border border-line bg-ink py-2 text-sm font-medium text-text disabled:opacity-60"
-      >
-        {saving ? "Saving…" : "Save"}
-      </button>
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="btn-tactile flex-1 rounded-sm border border-line bg-ink py-2 text-sm font-medium text-text disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          onClick={handleTestDigest}
+          disabled={testState === "sending"}
+          className="btn-tactile flex-1 rounded-sm border border-line bg-ink py-2 text-sm font-medium text-text disabled:opacity-60"
+        >
+          {testState === "sending" ? "Sending…" : "Send test digest"}
+        </button>
+      </div>
+      {testState === "sent" && (
+        <p className="text-xs" style={{ color: "var(--done)" }}>
+          Test digest sent — check WhatsApp.
+        </p>
+      )}
+      {testState === "error" && testError && <p className="text-xs text-blocked">{testError}</p>}
     </div>
   );
 }

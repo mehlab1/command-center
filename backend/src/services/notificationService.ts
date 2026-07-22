@@ -237,6 +237,21 @@ async function checkDailyDigest(now: Date): Promise<boolean> {
   return tryClaim("digest", "daily", dateKey);
 }
 
+// Manual trigger (Settings page "send a test digest") — sends the current
+// digest content over WhatsApp right now, bypassing the scheduled-time check
+// and the once-per-day dedup claim, so verifying a WhatsApp target actually
+// works doesn't require waiting for the real digest time or burning that
+// day's real send.
+export async function sendTestDigest(): Promise<{ sent: boolean; target: string | null }> {
+  const target = await getWhatsAppTarget();
+  if (!target) return { sent: false, target: null };
+
+  const now = new Date();
+  const data = await gatherDigestData(now);
+  await sendWhatsAppMessage(target, formatWhatsAppDigest(data, todayDateKey(now), now));
+  return { sent: true, target };
+}
+
 async function checkReminderOccurrences(now: Date): Promise<number> {
   const due = await reminderService.listDueOccurrences(now);
   let sent = 0;

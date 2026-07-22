@@ -23,6 +23,7 @@ import {
   setSetting,
 } from "../services/settingsService";
 import { searchWhatsAppGroups, getGroupName } from "../lib/greenApi";
+import { sendTestDigest } from "../services/notificationService";
 
 export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
@@ -82,6 +83,21 @@ settingsRouter.get("/whatsapp-groups/search", async (req, res) => {
     res.status(200).json({ matches });
   } catch (err) {
     res.status(502).json({ error: err instanceof Error ? err.message : "Failed to search WhatsApp groups" });
+  }
+});
+
+// Lets the Settings page verify a WhatsApp target actually works without
+// waiting for the scheduled digest time.
+settingsRouter.post("/whatsapp-test-digest", async (_req, res) => {
+  try {
+    const result = await sendTestDigest();
+    if (!result.sent) {
+      res.status(400).json({ error: "No WhatsApp number or group is configured yet." });
+      return;
+    }
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : "Failed to send the test digest" });
   }
 });
 
