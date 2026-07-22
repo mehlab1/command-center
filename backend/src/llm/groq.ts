@@ -61,6 +61,12 @@ export async function groqChat(messages: LlmMessage[], tools: LlmTool[]): Promis
       messages: toOpenAiMessages(messages),
       tools: toOpenAiTools(tools),
       tool_choice: "auto",
+      // Groq's free-tier rate limit counts requested tokens (input + the
+      // reserved max_tokens budget), not just what's actually generated —
+      // an uncapped request inflates that count even when the real
+      // response is short. A tool call or brief reply never needs more
+      // than this (docs/03-agent-and-llm.md "keep replies short").
+      max_tokens: 1024,
     }),
   });
 

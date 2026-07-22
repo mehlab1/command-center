@@ -1,17 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings, useStandaloneReminders } from "@/lib/queries";
 import { useColdStartBanner } from "@/lib/useColdStartBanner";
 import { apiFetch } from "@/lib/api";
 import { formatDateTime } from "@/lib/dateFormat";
-import { requestPushToken } from "@/lib/firebase";
+import { requestPushToken, silentlyRefreshPushToken } from "@/lib/firebase";
 import { ReminderDTO } from "@/lib/types";
 
 function NotificationOptIn() {
   const [status, setStatus] = useState<"idle" | "requesting" | "enabled" | "error">("idle");
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
+
+  // The button previously always read "Enable notifications" on every
+  // visit, even after a successful opt-in, because status was plain local
+  // React state with no check against reality. Notification.permission is
+  // itself a durable per-origin browser setting, so on mount: if it's
+  // already granted, re-derive the (stable) FCM token without re-prompting
+  // and re-register it — reflects the real state and keeps the
+  // registration fresh in one step, rather than just faking the label.
+  useEffect(() => {
+    let cancelled = false;
+    async function checkExisting() {
+      if (typeof window === "undefined" || Notification.permission !== "granted") return;
+      const token = await silentlyRefreshPushToken();
+      if (cancelled || !token) return;
+      const res = await apiFetch("/api/push/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!cancelled && res.ok) setStatus("enabled");
+    }
+    checkExisting();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleEnable() {
     setStatus("requesting");

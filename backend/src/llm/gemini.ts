@@ -12,33 +12,51 @@ interface GeminiContent {
   parts: GeminiPart[];
 }
 
-function toGeminiContents(messages: LlmMessage[]): GeminiContent[] {
+// Gemini requires contents to strictly alternate user/model turns — unlike
+// the stored chat_messages table, which legitimately has consecutive AGENT
+// rows back to back (e.g. a "(1/3) ..." confirmation summary immediately
+// followed by "Done — ..." once confirmed, with no user message in
+// between since confirm/cancel are separate button-driven requests, not a
+// chat turn). Feeding that sequence straight through as separate "model"
+// contents produced a 400 "invalid argument" on every real call once the
+// batch/confirm flow made same-role runs common (found via live production
+// history — 10 consecutive AGENT/AGENT pairs in the last 60 messages).
+// Merging consecutive same-role turns into one content entry preserves the
+// full text for the model while satisfying the alternation requirement.
+export function toGeminiContents(messages: LlmMessage[]): GeminiContent[] {
   const contents: GeminiContent[] = [];
+
+  function push(role: "user" | "model", parts: GeminiPart[]): void {
+    if (parts.length === 0) return;
+    const last = contents[contents.length - 1];
+    if (last && last.role === role) {
+      last.parts.push(...parts);
+    } else {
+      contents.push({ role, parts });
+    }
+  }
 
   for (const msg of messages) {
     if (msg.role === "system") continue; // sent separately as systemInstruction
 
     if (msg.role === "user") {
-      contents.push({ role: "user", parts: [{ text: msg.content ?? "" }] });
+      push("user", msg.content ? [{ text: msg.content }] : []);
     } else if (msg.role === "assistant") {
       const parts: GeminiPart[] = [];
       if (msg.content) parts.push({ text: msg.content });
       for (const call of msg.toolCalls ?? []) {
         parts.push({ functionCall: { name: call.name, args: call.args } });
       }
-      contents.push({ role: "model", parts });
+      push("model", parts);
     } else if (msg.role === "tool") {
-      contents.push({
-        role: "user",
-        parts: [
-          {
-            functionResponse: {
-              name: msg.toolName ?? "unknown",
-              response: { result: msg.content ?? "" },
-            },
+      push("user", [
+        {
+          functionResponse: {
+            name: msg.toolName ?? "unknown",
+            response: { result: msg.content ?? "" },
           },
-        ],
-      });
+        },
+      ]);
     }
   }
 
@@ -71,11 +89,18 @@ export async function geminiChat(
   const body: Record<string, unknown> = {
     contents: toGeminiContents(messages),
     tools: toGeminiTools(tools),
-    // 2.5-flash is a "thinking" model — without capping this, it can spend
-    // its whole token budget on invisible reasoning and return truly empty
-    // content, especially with a large tool set. Deterministic tool-routing
-    // doesn't need visible chain-of-thought, so disable it outright.
-    generationConfig: { thinkingConfig: { thinkingBudget: 0 } },
+    // No thinkingConfig here, deliberately: gemini-flash-lite-latest
+    // rejects ANY thinkingConfig object outright with a 400 "invalid
+    // argument" — found live (this was the actual root cause of chat
+    // breaking constantly in real usage, previously misdiagnosed as only
+    // a role-alternation issue). A prior model this app used may have
+    // supported/required it, but "-latest" aliases can silently shift to
+    // a different underlying version — verify support before re-adding
+    // this for a different model rather than assuming it's still valid.
+    // maxOutputTokens caps the free-tier request's token footprint the
+    // same way as Groq's max_tokens below — a tool call or brief reply
+    // never needs more (docs/03-agent-and-llm.md "keep replies short").
+    generationConfig: { maxOutputTokens: 1024 },
   };
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };

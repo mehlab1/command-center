@@ -1,7 +1,7 @@
 import { ChatRole, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { llmRouter } from "../llm/router";
-import { LlmMessage, LlmToolCall } from "../llm/types";
+import { LlmMessage, LlmProviderError, LlmToolCall } from "../llm/types";
 import { resolveEntity } from "./disambiguation";
 import { ALL_TOOLS, READ_TOOL_NAMES, SYSTEM_PROMPT, WRITE_TOOL_NAMES } from "./tools";
 import { WRITE_PREPARERS, PrepareResult } from "./writeHandlers";
@@ -178,9 +178,27 @@ async function checkSecretPasteRedirect(content: string): Promise<string | undef
   return undefined;
 }
 
+// Every user message is saved unconditionally, up front, before anything
+// else runs — the wrapper below guarantees a paired agent-side record no
+// matter what fails afterward (LLM provider outage, a DB read, anything),
+// so chat_messages never has a user turn with a silent, unexplained gap
+// where the agent's side would normally be (found via a real production
+// gap: both LLM providers failed and the whole request just 500'd with
+// nothing recorded past the user's own message).
 export async function handleUserMessage(content: string): Promise<OrchestratorResult> {
   await saveMessage(ChatRole.USER, content);
 
+  try {
+    return await processUserMessage(content);
+  } catch (err) {
+    const detail = describeLlmFailure(err);
+    const message = `Sorry, I couldn't get a response just now (${detail}). Try again in a moment.`;
+    await saveMessage(ChatRole.AGENT, message);
+    return { type: "message", message };
+  }
+}
+
+async function processUserMessage(content: string): Promise<OrchestratorResult> {
   const redirect = await checkSecretPasteRedirect(content);
   if (redirect) {
     await saveMessage(ChatRole.AGENT, redirect);
@@ -199,9 +217,11 @@ export async function handleUserMessage(content: string): Promise<OrchestratorRe
     minute: "2-digit",
     hour12: true,
   });
-  let systemWithClock = `${SYSTEM_PROMPT}\n\nCurrent date/time in Mehlab's timezone, Pakistan Standard Time (${APP_TIMEZONE}, always ${APP_UTC_OFFSET}, no DST): ${nowInKarachi}. Use this for any relative date/time the user mentions ("tomorrow", "in 5 days", "11pm tonight", etc) — never guess or use your training cutoff.\n\nWhenever you produce an ISO 8601 datetime value for any tool argument (deadline, revised_deadline, etc), you MUST include the explicit ${APP_UTC_OFFSET} offset, e.g. "2026-07-23T23:00:00${APP_UTC_OFFSET}" for 11pm Mehlab's time. Never emit a bare/naive datetime and never use "Z"/UTC — Mehlab always means his own local time (Pakistan) when he states a time, even though the current-time value above is shown to you already converted to that zone for convenience. A date with no specific time (just "in 3 days") can be a plain date "2026-07-23" with no time component at all.\n\nIf the user describes several distinct things to create/change in one message (e.g. "add devs A, B, C, all permanent", or "create a project and two tasks in it"), call the appropriate tool once per distinct item, all in this same turn — you can return multiple tool calls at once. Don't just handle the first one and drop the rest.
+  let systemWithClock = `${SYSTEM_PROMPT}
 
-This applies even when some items are missing a field you'd normally stop and ask about. Call the tool for EVERY distinct item mentioned regardless, filling in whatever fields you do have and simply omitting whichever field you don't — never silently skip an item because it's incomplete, and never ask about a missing field yourself in plain text when it's part of a multi-item message. The system inspects every item you call, figures out exactly what's missing on each one, and asks the user in a single combined message naming each item — this only works if you actually emit a tool call for every item, including the incomplete ones.`;
+Current date/time, Pakistan Standard Time (${APP_TIMEZONE}, always ${APP_UTC_OFFSET}, no DST): ${nowInKarachi}. Use this for relative dates/times ("tomorrow", "in 5 days", "11pm tonight") — never guess or use your training cutoff. Every ISO 8601 datetime you emit for a tool argument MUST include the explicit ${APP_UTC_OFFSET} offset (e.g. "2026-07-23T23:00:00${APP_UTC_OFFSET}" for 11pm) — never bare/naive, never "Z"/UTC, Mehlab always means his own local time. A date with no specific time can be a plain date with no time component.
+
+If the user describes several distinct things to create/change in one message (e.g. "add devs A, B, C, all permanent"), call the appropriate tool once per distinct item, all in this turn — don't just handle the first and drop the rest. This holds even when some items are missing a field you'd normally ask about: call the tool for EVERY item regardless, filling in what you have and omitting what you don't — never silently skip an incomplete item, never ask about a missing field yourself in plain text here. The system inspects every item you call and asks about all the gaps in one combined message — this only works if you emit a tool call for every item, including incomplete ones.`;
 
   // If a proposal is still awaiting confirmation, nothing has been written
   // yet — the LLM has no other way to know this, and without it a
@@ -257,6 +277,14 @@ This applies even when some items are missing a field you'd normally stop and as
   const fallback = "I'm having trouble figuring that out — can you rephrase or give more detail?";
   await saveMessage(ChatRole.AGENT, fallback);
   return { type: "message", message: fallback };
+}
+
+function describeLlmFailure(err: unknown): string {
+  if (err instanceof LlmProviderError) {
+    return `${err.provider} ${err.status ?? "error"}`;
+  }
+  if (err instanceof Error) return err.message;
+  return "unknown error";
 }
 
 // Promotes the next queued batch item (if any) to a fresh PendingAction —

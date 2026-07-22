@@ -48,3 +48,24 @@ export async function requestPushToken(): Promise<string> {
   }
   return token;
 }
+
+// Re-derives the same FCM token for an already-granted permission, with no
+// permission prompt and no thrown errors — used to restore/refresh the
+// "enabled" UI state on mount and to keep the server-side registration
+// current, not to drive the initial opt-in flow.
+export async function silentlyRefreshPushToken(): Promise<string | null> {
+  if (typeof window === "undefined" || Notification.permission !== "granted") return null;
+  if (!(await isSupported())) return null;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const messaging: Messaging = getMessaging(getFirebaseApp());
+    const token = await getToken(messaging, {
+      vapidKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      serviceWorkerRegistration: registration,
+    });
+    return token || null;
+  } catch {
+    return null;
+  }
+}

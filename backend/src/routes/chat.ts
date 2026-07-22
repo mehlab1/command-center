@@ -53,11 +53,18 @@ chatRouter.post("/cancel", async (req, res) => {
 });
 
 chatRouter.get("/messages", async (_req, res) => {
+  // orderBy asc + take previously returned the OLDEST 200 messages, not the
+  // most recent — once a conversation passed 200 total messages, the chat
+  // view got permanently stuck showing only the earliest history and never
+  // any of what came after (found from a real 493-message conversation).
+  // Fetch the newest N by ordering desc, then reverse for chronological
+  // display. All messages are still preserved in the database regardless
+  // of this display window — nothing here ever deletes/truncates storage.
   const messages = await prisma.chatMessage.findMany({
-    orderBy: { createdAt: "asc" },
-    take: 200,
+    orderBy: { createdAt: "desc" },
+    take: 300,
   });
-  res.status(200).json(messages);
+  res.status(200).json(messages.reverse());
 });
 
 chatRouter.get("/pending", async (_req, res) => {

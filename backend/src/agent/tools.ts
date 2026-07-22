@@ -3,27 +3,27 @@ import { LlmTool } from "../llm/types";
 const READ_TOOLS: LlmTool[] = [
   {
     name: "search_dev",
-    description: "Look up an existing dev by name (fuzzy match). Use this to resolve a name mentioned in conversation before proposing a write that references a dev.",
+    description: "Look up an existing dev by name (fuzzy match). Rarely needed — write tools already resolve dev_query names automatically. Only call this if you need to know the answer yourself before deciding what to say (e.g. answering 'who is on X').",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
   {
     name: "search_project",
-    description: "Look up an existing project by name (fuzzy match).",
+    description: "Look up an existing project by name. Rarely needed — write tools resolve project_query automatically; only call this if you need the answer yourself before replying.",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
   {
     name: "search_pod",
-    description: "Look up an existing pod by name (fuzzy match).",
+    description: "Look up an existing pod by name. Rarely needed — write tools resolve pod_query automatically; only call this if you need the answer yourself before replying.",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
   {
     name: "search_task",
-    description: "Look up an existing task by title (fuzzy match).",
+    description: "Look up an existing task by title. Rarely needed — write tools resolve task_query automatically; only call this if you need the answer yourself before replying.",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
   {
     name: "search_vault_item",
-    description: "Look up an existing vault item by name (fuzzy match).",
+    description: "Look up an existing vault item by name. Rarely needed — write tools resolve vault_item_query automatically; only call this if you need the answer yourself before replying.",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
 ];
@@ -73,7 +73,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "create_dev",
-    description: "Add a brand-new dev who doesn't exist yet. Do NOT use this if the user is changing something about a dev who already exists (e.g. 'change X's designation', 'X is now a permanent hire') — use edit_dev for that instead. If the user is adding several devs in one message and only some of them have a stated employment type, treat every dev independently: do NOT copy another dev's stated PERMANENT/INTERN onto this one just because they were mentioned in the same sentence or list. Each create_dev call's employment_type reflects only what was said about that exact person.",
+    description: "Add a brand-new dev. For changing an existing dev (e.g. 'X is now a permanent hire'), use edit_dev instead. When adding several devs in one message, treat each independently — never copy one dev's stated PERMANENT/INTERN onto another just because they're in the same sentence/list.",
     parameters: {
       type: "object",
       properties: {
@@ -82,7 +82,7 @@ const WRITE_TOOLS: LlmTool[] = [
         employment_type: {
           type: "string",
           enum: ["PERMANENT", "INTERN"],
-          description: "Only set this if the user actually said permanent/intern for THIS specific named person, in a clause that names them (or unambiguously refers only to them). If another dev mentioned nearby has a stated employment_type, that value does NOT carry over to this one — omit this field entirely unless THIS person's status was stated.",
+          description: "Only if THIS specific named person's status was stated. Never inherited from a nearby dev's stated status — omit if unstated for this person.",
         },
         internship_end_date: { type: "string", description: "ISO 8601 date, only relevant for interns" },
       },
@@ -154,7 +154,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "create_task",
-    description: "Create a brand-new task. Either is_personal must be true (a task for Mehlab himself, not a dev) or at least one assignee_dev_queries entry must be given — never both. If the user says something like 'remind me to...' or 'I need to finish...' without naming a dev, infer is_personal true rather than asking who it's for. needs_qa is decided now and can never be changed later, so if it's not obvious, ask.",
+    description: "Create a brand-new task. Either is_personal=true (for Mehlab himself) or at least one assignee_dev_queries entry — never both. 'remind me to...'/'I need to finish...' with no dev named → infer is_personal true. needs_qa can never change later, so ask if not obvious.",
     parameters: {
       type: "object",
       properties: {
@@ -181,7 +181,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "mark_task_blocked",
-    description: "Mark a task blocked. Both blocker_description and revised_deadline are required together. If the user only gives you one of the two (e.g. just says what's blocking it, with no new date), you MUST call this tool with only the field they actually stated and omit the other — do not invent, estimate, or default the missing one. The system will ask for whatever's missing; do not guess a plausible-looking date yourself.",
+    description: "Mark a task blocked. blocker_description and revised_deadline are required together — if the user only gave one, call with only that field and omit the other; never invent/estimate the missing one. The system asks for whatever's missing.",
     parameters: {
       type: "object",
       properties: {
@@ -194,7 +194,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "mark_task_done",
-    description: "Mark a task done. If it's being completed after its deadline, the system will ask whether that should count as a missed deadline before confirming. If the task has upcoming scheduled reminders, the system separately asks whether to cancel them too. You don't need to ask either of these yourself, just call the tool — the system asks one at a time and re-prompts as needed.",
+    description: "Mark a task done. The system separately asks (one at a time, as needed) whether a late completion counts as missed-deadline, and whether to cancel the task's upcoming reminders — just call the tool, don't ask these yourself.",
     parameters: {
       type: "object",
       properties: {
@@ -242,7 +242,7 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "create_vault_item_metadata",
-    description: "Create a new vault entry's METADATA ONLY — name, folder, tags, and non-sensitive notes. This tool has no field for the actual secret value/password/API key/credential and never will — that is entered separately through a secure widget the frontend shows after this is confirmed, completely outside the chat/LLM path. Never put a real secret value into `notes` either, even if the user pastes one right after asking to create a vault item — notes is for non-sensitive context only (e.g. 'expires yearly in March', 'used for the client portal'). If the user's message contains what looks like the actual secret, ignore that part when calling this tool; the system will prompt them to enter it securely.",
+    description: "Create a vault entry's METADATA ONLY (name, folder, tags, non-sensitive notes) — no field for the actual secret value/password/key, ever. It's entered later via a secure widget outside the chat path. Never put a real secret into notes; if the user's message contains one, ignore that part — the system prompts them to enter it securely.",
     parameters: {
       type: "object",
       properties: {
@@ -280,18 +280,18 @@ const WRITE_TOOLS: LlmTool[] = [
   },
   {
     name: "create_reminder",
-    description: "Create a reminder — standalone (no task/project link) or linked to an existing task/project. Give the fire time in exactly ONE of three ways: a single `fire_time`; `fire_time` plus `recurring_interval_days` and `recurring_count` for an evenly-spaced recurring reminder (fire_time is the FIRST occurrence); or an explicit `fire_times` list for irregular dates. Never combine more than one of these — pick the one that matches what the user actually said.",
+    description: "Create a reminder, standalone or linked to a task/project. Fire time is exactly ONE of: fire_time alone; fire_time + recurring_interval_days + recurring_count (recurring, fire_time = first occurrence); or fire_times (explicit irregular list). Never combine these.",
     parameters: {
       type: "object",
       properties: {
-        message: { type: "string", description: "What the reminder says. Required for a standalone reminder. For a linked reminder, only set this if the user actually said specific wording — otherwise omit it and the system generates one from the linked task/project." },
-        task_query: { type: "string", description: "Link this reminder to an existing task, if the user said one" },
-        project_query: { type: "string", description: "Link this reminder to an existing project, if the user said one" },
-        channel: { type: "string", enum: ["PUSH", "WHATSAPP"], description: "Only set this if the user actually asked for WhatsApp — PUSH is the system default and doesn't need to be stated." },
-        fire_time: { type: "string", description: "ISO 8601 datetime — a single occurrence, or the first occurrence if recurring_interval_days/recurring_count are also set" },
-        recurring_interval_days: { type: "integer", description: "Days between occurrences — only with recurring_count and fire_time" },
-        recurring_count: { type: "integer", description: "Total number of occurrences — only with recurring_interval_days and fire_time" },
-        fire_times: { type: "array", items: { type: "string" }, description: "Explicit list of ISO 8601 datetimes for irregular reminder dates — don't combine with fire_time/recurring fields" },
+        message: { type: "string", description: "Required if standalone. If linked, only set when the user gave specific wording — otherwise omit, system auto-generates from the linked task/project." },
+        task_query: { type: "string", description: "Link to an existing task, if stated" },
+        project_query: { type: "string", description: "Link to an existing project, if stated" },
+        channel: { type: "string", enum: ["PUSH", "WHATSAPP"], description: "Only if the user asked for WhatsApp — PUSH is default." },
+        fire_time: { type: "string", description: "ISO 8601 datetime — single occurrence, or first occurrence if recurring fields set" },
+        recurring_interval_days: { type: "integer", description: "Days between occurrences — only with recurring_count + fire_time" },
+        recurring_count: { type: "integer", description: "Total occurrences — only with recurring_interval_days + fire_time" },
+        fire_times: { type: "array", items: { type: "string" }, description: "Explicit irregular ISO 8601 datetimes — don't combine with fire_time/recurring fields" },
       },
       required: [],
     },
@@ -329,11 +329,11 @@ export const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name));
 export const SYSTEM_PROMPT = `You are the agent inside FinovaSolutions Command Center, a personal project/team management tool for Mehlab.
 
 Rules you must follow exactly:
-- You never write to the database yourself. When the user wants to create, edit, or delete something, call the appropriate tool once with the fields you're confident about — the system will resolve names, ask for anything missing, show a plain-language confirmation, and only write after the user explicitly confirms. You do not need to ask "are you sure?" yourself — that's handled after your tool call.
-- Never confuse creating something new with changing something that already exists. If the user names an existing dev/project/pod and wants a detail about them changed (designation, deadline, name, status — anything), that is always an edit_*/reassign_* call, never a create_* call, even if they don't use the word "edit" (e.g. "Ehsan's designation is now Senior Engineer" means edit_dev, not create_dev). Only call a create_* tool when the user is clearly introducing something that doesn't exist yet.
-- If a name mentioned (a dev, project, or pod) is ambiguous or unclear, prefer letting the system's resolution handle it — just pass through the name as the user said it (e.g. "project_query": "the marketing site"). Never invent or guess a fuller/different name than what the user actually said.
-- If required information for a tool is genuinely missing from the conversation (not a name to resolve, but a real missing field like employment_type), ask the user directly in plain text instead of guessing.
-- Never invent a plausible-looking value (a date, a number, a name, an enum choice like PERMANENT/INTERN) for a field the user did not actually state, even if it would make the tool call "complete," even if it's the statistically common answer, and even if a nearby item in the same message happened to have that value. "This is probably what they meant" is still guessing. Omit that field from the call entirely — the system will notice it's missing and ask for it. This matters most for dates: if the user gives a relative date for one field (e.g. a deadline) but not another (e.g. a revised deadline on a blocked task), do not reuse, estimate, or extrapolate a date for the field they didn't mention.
-- Keep replies short and plain. No markdown headers, no bullet-point walls, sentence case.
-- If the user pastes something that looks like a secret/credential/API key, do not include it in any tool call, including as a "notes" field — tell them to use the Vault's secure entry widget for that instead. Vault metadata (name/folder/tags/notes) goes through create_vault_item_metadata/edit_vault_item_metadata like any other entity; the actual secret value never goes through you or any tool call, ever.
-- There is no edit_task tool, ever — this is deliberate, not missing. If the user wants to change a task's title, deadline, assignees, or description, the correct flow is delete_task then a fresh create_task, and you should say so plainly rather than looking for an edit tool that doesn't exist. Status changes (blocked/done) go through mark_task_blocked/mark_task_done, which are not edits in this sense.`;
+- Never write to the database yourself. Call the right tool once with the fields you're confident about — the system resolves names, asks for anything missing, confirms in plain language, and writes only after explicit user confirmation. Don't ask "are you sure?" yourself.
+- Changing an existing dev/project/pod (designation, deadline, name, status — anything) is always edit_*/reassign_*, never create_*, even without the word "edit" (e.g. "Ehsan's designation is now Senior Engineer" → edit_dev). Only create_* for something that doesn't exist yet.
+- An ambiguous/unclear name (dev, project, pod) — pass it through as-is (e.g. "project_query": "the marketing site"); never invent a fuller/different name.
+- A genuinely missing required field (not a name to resolve, e.g. employment_type) — ask the user directly instead of guessing.
+- Never invent a plausible value (date, number, name, enum like PERMANENT/INTERN) for a field the user didn't state, even if it'd complete the call, even if it's the common answer, even if a nearby item in the same message had that value — omit it, the system will ask. Matters most for dates: a stated deadline never implies a revised_deadline or any other unstated date field.
+- Keep replies short, plain, sentence case — no markdown headers, no bullet walls.
+- A pasted secret/credential/API key never goes in any tool call (including "notes") — tell the user to use the Vault's secure entry widget. Vault metadata (name/folder/tags/notes) goes through create_vault_item_metadata/edit_vault_item_metadata; the secret value itself never touches you or any tool call.
+- No edit_task tool, ever — deliberate. Changing a task's title/deadline/assignees/description is delete_task then fresh create_task; say so plainly. Status changes (blocked/done) go through mark_task_blocked/mark_task_done instead.`;

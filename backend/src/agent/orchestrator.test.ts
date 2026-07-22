@@ -195,6 +195,34 @@ describe("handleUserMessage — vault secret chat redirect", () => {
   });
 });
 
+describe("handleUserMessage — total LLM provider failure leaves no audit gap", () => {
+  it("still saves an agent-side message and returns gracefully when every provider fails (found in production: a raw 500 with nothing recorded past the user's message)", async () => {
+    llmChat.mockRejectedValueOnce(new Error("Groq error 429: rate_limit_exceeded"));
+
+    const result = await handleUserMessage("what's due today?");
+
+    // The user's own message is always saved unconditionally (asserted via
+    // the first create call); a second create call is the paired
+    // agent-side failure record — no dangling user turn with nothing after it.
+    expect(chatMessageCreate).toHaveBeenCalledTimes(2);
+    expect(chatMessageCreate.mock.calls[0][0].data.role).toBe("USER");
+    expect(chatMessageCreate.mock.calls[1][0].data.role).toBe("AGENT");
+    expect(chatMessageCreate.mock.calls[1][0].data.content).toContain("429");
+
+    expect(result.type).toBe("message");
+    expect(result.message).toContain("429");
+  });
+
+  it("does not throw even when the failure isn't a recognizable LlmProviderError", async () => {
+    llmChat.mockRejectedValueOnce("a raw non-Error rejection");
+
+    const result = await handleUserMessage("hello");
+
+    expect(result.type).toBe("message");
+    expect(chatMessageCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("cancelPendingAction", () => {
   it("deletes the pending action and writes nothing to the audit log", async () => {
     pendingActionFindUnique.mockResolvedValueOnce({
