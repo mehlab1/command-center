@@ -14,14 +14,23 @@ export async function isDevLead(devId: string): Promise<boolean> {
   return count > 0;
 }
 
-export async function getOpenTaskCount(devId: string): Promise<number> {
-  return prisma.task.count({
-    where: { status: { not: TaskStatus.DONE }, assignees: { some: { devId } } },
+// Mehlab's own dev row — his personal tasks (isPersonal=true) are never
+// linked via TaskAssignee at all (there's no one else to assign them to),
+// so they'd otherwise never count as "his" anywhere. Folded in here by name
+// since this app models exactly one CTO and always will.
+export const SELF_DEV_NAME = "Mehlab";
+
+export async function getOpenTaskCount(dev: Pick<Dev, "id" | "name">): Promise<number> {
+  const assigned = await prisma.task.count({
+    where: { status: { not: TaskStatus.DONE }, assignees: { some: { devId: dev.id } } },
   });
+  if (dev.name !== SELF_DEV_NAME) return assigned;
+  const personal = await prisma.task.count({ where: { status: { not: TaskStatus.DONE }, isPersonal: true } });
+  return assigned + personal;
 }
 
 export async function withComputed(dev: Dev): Promise<DevWithComputed> {
-  const [isLead, openTaskCount] = await Promise.all([isDevLead(dev.id), getOpenTaskCount(dev.id)]);
+  const [isLead, openTaskCount] = await Promise.all([isDevLead(dev.id), getOpenTaskCount(dev)]);
   return { ...dev, isLead, isAssigned: openTaskCount > 0, openTaskCount };
 }
 

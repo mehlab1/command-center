@@ -44,10 +44,15 @@ export default function DevsPage() {
   // Two independent reasons a dev needs your attention: nothing assigned
   // (idle capacity), or something assigned that's now overdue (needs
   // chasing) — surfaced identically (a glowing card) so both are equally
-  // hard to miss at a glance, per the user's explicit ask.
+  // hard to miss at a glance, per the user's explicit ask. Mehlab himself
+  // is exempt — his own to-dos never earn him a red flag.
   const alerts = useMemo(() => {
     const map = new Map<string, DevAlert>();
     for (const dev of devsQuery.data ?? []) {
+      if (dev.name === "Mehlab") {
+        map.set(dev.id, { glow: false, message: null });
+        continue;
+      }
       const overdueTask = (tasksQuery.data ?? []).find(
         (t) => t.status !== "DONE" && new Date(t.deadline) < new Date() && t.assignees.some((a) => a.dev.id === dev.id)
       );

@@ -27,16 +27,23 @@ export default function DevDetailPage() {
   const [acknowledgeOpenTasks, setAcknowledgeOpenTasks] = useState(false);
 
   const dev = devsQuery.data?.find((d) => d.id === params.id);
-  const assignedTasks = tasksQuery.data?.filter((t) => t.assignees.some((a) => a.dev.id === params.id)) ?? [];
+  // Mehlab's personal to-dos (isPersonal) are never linked via an assignee
+  // row — there's no one else to assign them to — so they only ever surface
+  // on his own dev page, folded in alongside anything actually assigned to him.
+  const assignedTasks =
+    tasksQuery.data?.filter((t) => t.assignees.some((a) => a.dev.id === params.id) || (dev?.name === "Mehlab" && t.isPersonal)) ?? [];
   const pod = podsQuery.data?.find((p) => p.leadDevId === params.id || p.members.some((m) => m.id === params.id));
   const performance = performanceQuery.data?.find((p) => p.devId === params.id);
 
   const overdueTask = assignedTasks.find((t) => t.status !== "DONE" && new Date(t.deadline) < new Date());
-  const alertMessage = overdueTask
-    ? `Overdue: "${overdueTask.title}"`
-    : dev && dev.openTaskCount === 0
-      ? "Idle — no tasks assigned"
-      : null;
+  const alertMessage =
+    dev?.name === "Mehlab"
+      ? null
+      : overdueTask
+        ? `Overdue: "${overdueTask.title}"`
+        : dev && dev.openTaskCount === 0
+          ? "Idle — no tasks assigned"
+          : null;
 
   async function handleDelete() {
     setDeleteBusy(true);
