@@ -2,8 +2,9 @@ import { Prisma, TaskStatus, ProjectStatus, QaStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { sendPushToAllDevices } from "./pushService";
 import { sendWhatsAppMessage } from "../lib/greenApi";
-import { getDailyDigestTime, getWhatsAppNumber } from "./settingsService";
+import { getDailyDigestTime, getWhatsAppTarget } from "./settingsService";
 import { formatDeadline } from "../lib/dateFormat";
+import { SELF_DEV_NAME } from "./devService";
 import * as reminderService from "./reminderService";
 
 const APP_TIMEZONE = "Asia/Karachi";
@@ -109,38 +110,101 @@ function currentHHmm(now: Date): string {
   return now.toLocaleTimeString("en-GB", { timeZone: APP_TIMEZONE, hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-async function composeDigest(): Promise<string> {
-  const [dueToday, overdue, unassignedDevs, projectsNoTasks, unassignedQa] = await Promise.all([
-    prisma.task.count({
-      where: {
-        status: { not: TaskStatus.DONE },
-        deadline: { gte: startOfTodayKarachi(), lt: endOfTodayKarachi() },
-      },
+interface DigestTask {
+  title: string;
+  deadline: Date;
+  devName: string | null;
+}
+
+interface DigestData {
+  personalTasks: DigestTask[];
+  dueWithin24h: DigestTask[];
+  qaQueue: string[];
+  unassignedDevs: string[];
+  unassignedProjects: string[];
+}
+
+// All open (non-DONE) personal tasks, plus every non-personal task whose
+// deadline falls at or before now+24h — deliberately includes anything
+// already overdue rather than dropping it, so nothing due goes unmentioned
+// just because its window already closed.
+async function gatherDigestData(now: Date): Promise<DigestData> {
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  const [personalTasks, dueSoonTasks, qaEntries, unassignedDevs, unassignedProjects] = await Promise.all([
+    prisma.task.findMany({
+      where: { status: { not: TaskStatus.DONE }, isPersonal: true },
+      orderBy: { deadline: "asc" },
+      select: { title: true, deadline: true },
     }),
-    prisma.task.count({ where: { status: { not: TaskStatus.DONE }, deadline: { lt: new Date() } } }),
-    prisma.dev.count({ where: { taskAssignees: { none: {} } } }),
-    prisma.project.count({ where: { tasks: { none: {} } } }),
-    prisma.qaQueueEntry.count({ where: { status: QaStatus.UNASSIGNED } }),
+    prisma.task.findMany({
+      where: { status: { not: TaskStatus.DONE }, isPersonal: false, deadline: { lt: in24h } },
+      orderBy: { deadline: "asc" },
+      select: { title: true, deadline: true, assignees: { select: { dev: { select: { name: true } } } } },
+    }),
+    prisma.qaQueueEntry.findMany({
+      where: { status: QaStatus.UNASSIGNED },
+      select: { task: { select: { title: true } } },
+    }),
+    // Mehlab is exempt from "no open task" style alerts elsewhere in the app
+    // (his own work is tracked as personal tasks, not assignments) — same
+    // exemption applies here so he doesn't see himself listed every day.
+    prisma.dev.findMany({
+      where: { taskAssignees: { none: {} }, name: { not: SELF_DEV_NAME } },
+      select: { name: true },
+    }),
+    prisma.project.findMany({
+      where: { tasks: { none: {} } },
+      select: { name: true },
+    }),
   ]);
 
-  const parts = [
-    `Due today: ${dueToday}`,
-    `Overdue: ${overdue}`,
-    `Devs with no open task: ${unassignedDevs}`,
-    `Projects with no tasks: ${projectsNoTasks}`,
-    `Unassigned QA entries: ${unassignedQa}`,
-  ];
-  return parts.join(" · ");
+  return {
+    personalTasks: personalTasks.map((t) => ({ title: t.title, deadline: t.deadline, devName: null })),
+    dueWithin24h: dueSoonTasks.map((t) => ({
+      title: t.title,
+      deadline: t.deadline,
+      devName: t.assignees[0]?.dev.name ?? null,
+    })),
+    qaQueue: qaEntries.map((q) => q.task.title),
+    unassignedDevs: unassignedDevs.map((d) => d.name),
+    unassignedProjects: unassignedProjects.map((p) => p.name),
+  };
 }
 
-function startOfTodayKarachi(): Date {
-  const key = todayDateKey(new Date());
-  return new Date(`${key}T00:00:00+05:00`);
+// Push notification bodies are meant to be glanceable, not itemized — a
+// one-line count summary that deep-links into the dashboard for detail.
+function formatPushSummary(data: DigestData): string {
+  return [
+    `Personal: ${data.personalTasks.length}`,
+    `Due within 24h: ${data.dueWithin24h.length}`,
+    `QA queue: ${data.qaQueue.length}`,
+    `Unassigned devs: ${data.unassignedDevs.length}`,
+    `Unassigned projects: ${data.unassignedProjects.length}`,
+  ].join(" · ");
 }
 
-function endOfTodayKarachi(): Date {
-  const key = todayDateKey(new Date());
-  return new Date(`${key}T23:59:59.999+05:00`);
+function formatTaskLine(t: DigestTask, now: Date): string {
+  const who = t.devName ? ` — ${t.devName}` : "";
+  const overdue = t.deadline < now ? " (overdue)" : "";
+  return `- ${t.title}${who} (${formatDeadline(t.deadline)})${overdue}`;
+}
+
+function formatSection(title: string, lines: string[]): string {
+  return [`*${title}*`, lines.length > 0 ? lines.join("\n") : "- none"].join("\n");
+}
+
+// Full itemized version for WhatsApp — the digest's primary readable form,
+// per the app's chat-first design. WhatsApp renders *text* as bold.
+function formatWhatsAppDigest(data: DigestData, dateKey: string, now: Date): string {
+  return [
+    `*Daily Digest — ${dateKey}*`,
+    formatSection("Personal Tasks", data.personalTasks.map((t) => formatTaskLine(t, now))),
+    formatSection("Due within 24h", data.dueWithin24h.map((t) => formatTaskLine(t, now))),
+    formatSection("QA Queue", data.qaQueue.map((title) => `- ${title}`)),
+    formatSection("Unassigned Devs", data.unassignedDevs.map((name) => `- ${name}`)),
+    formatSection("Unassigned Projects", data.unassignedProjects.map((name) => `- ${name}`)),
+  ].join("\n\n");
 }
 
 async function checkDailyDigest(now: Date): Promise<boolean> {
@@ -151,8 +215,20 @@ async function checkDailyDigest(now: Date): Promise<boolean> {
   if (await alreadyClaimed("digest", "daily", dateKey)) return false;
 
   try {
-    const summary = await composeDigest();
-    await sendPushToAllDevices({ title: "Daily digest", body: summary, url: "/dashboard" });
+    const data = await gatherDigestData(now);
+    await sendPushToAllDevices({ title: "Daily digest", body: formatPushSummary(data), url: "/dashboard" });
+
+    const target = await getWhatsAppTarget();
+    if (target) {
+      try {
+        await sendWhatsAppMessage(target, formatWhatsAppDigest(data, dateKey, now));
+      } catch (err) {
+        // The push digest already went out — a WhatsApp delivery failure
+        // must not un-send that, and must not block the claim below (that
+        // would retry the whole digest next tick and double-send the push).
+        console.error("Failed to send WhatsApp daily digest:", err);
+      }
+    }
   } catch (err) {
     console.error("Failed to compose/send daily digest:", err);
     return false;
@@ -169,9 +245,9 @@ async function checkReminderOccurrences(now: Date): Promise<number> {
     const body = reminder.message;
     try {
       if (reminder.channel === "WHATSAPP") {
-        const number = await getWhatsAppNumber();
-        if (number) {
-          await sendWhatsAppMessage(number, body);
+        const target = await getWhatsAppTarget();
+        if (target) {
+          await sendWhatsAppMessage(target, body);
         } else {
           // No number configured — fall back to push rather than silently
           // dropping the reminder entirely.

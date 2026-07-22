@@ -9,7 +9,7 @@ import * as ratingService from "../services/ratingService";
 import * as vaultService from "../services/vaultService";
 import * as reminderService from "../services/reminderService";
 import { sendPushToAllDevices } from "../services/pushService";
-import { setSetting } from "../services/settingsService";
+import { setSetting, WHATSAPP_NUMBER_KEY, WHATSAPP_TARGET_TYPE_KEY } from "../services/settingsService";
 
 // Runs only after the user has explicitly confirmed — this is the single
 // place a write tool's resolved args actually touch the database.
@@ -440,6 +440,13 @@ export async function executeWrite(
       const key = args.key as string;
       const value = args.value as string;
       await setSetting(key, value);
+      if (key === WHATSAPP_NUMBER_KEY) {
+        // Setting a number this way (chat) should make it the active
+        // WhatsApp target immediately, same as picking "Phone number" in
+        // Settings — otherwise it would silently do nothing if a group was
+        // previously active.
+        await setSetting(WHATSAPP_TARGET_TYPE_KEY, "number");
+      }
       await recordAudit({
         actionType: AuditActionType.EDIT,
         entityType: "setting",

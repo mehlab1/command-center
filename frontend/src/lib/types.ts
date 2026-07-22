@@ -103,9 +103,21 @@ export interface DevPerformanceDTO {
   history: { rating: number; onTime: boolean; createdAt: string; taskTitle: string }[];
 }
 
+export type WhatsAppTargetType = "number" | "group";
+
 export interface SettingsDTO {
   dailyDigestTime: string;
-  whatsappNumber: string | null;
+  whatsappTargetType: WhatsAppTargetType;
+  whatsappCountryCode: string;
+  whatsappLocalNumber: string;
+  whatsappGroupId: string | null;
+  whatsappGroupName: string | null;
+}
+
+export interface WhatsAppGroupMatchDTO {
+  id: string;
+  name: string;
+  score: number;
 }
 
 export type ReminderOccurrenceStatus = "SCHEDULED" | "SENT" | "CANCELLED";
