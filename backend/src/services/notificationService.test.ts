@@ -32,8 +32,9 @@ jest.mock("./pushService", () => ({ sendPushToAllDevices: (...a: unknown[]) => s
 const sendWhatsAppMessage = jest.fn();
 jest.mock("../lib/greenApi", () => ({ sendWhatsAppMessage: (...a: unknown[]) => sendWhatsAppMessage(...a) }));
 
+const listDueOccurrences = jest.fn();
 jest.mock("./reminderService", () => ({
-  listDueOccurrences: jest.fn().mockResolvedValue([]),
+  listDueOccurrences: (...a: unknown[]) => listDueOccurrences(...a),
   markOccurrenceSent: jest.fn(),
 }));
 
@@ -53,6 +54,7 @@ beforeEach(() => {
   qaQueueEntryCount.mockResolvedValue(0);
   qaQueueEntryFindMany.mockResolvedValue([]);
   sendWhatsAppMessage.mockResolvedValue(undefined);
+  listDueOccurrences.mockResolvedValue([]);
 });
 
 describe("runCronTick — deadline dedup ordering", () => {
@@ -164,13 +166,14 @@ describe("runCronTick — daily digest content & WhatsApp delivery", () => {
     ]);
     qaQueueEntryFindMany.mockResolvedValue([{ task: { title: "Review PR" } }]);
     devFindMany.mockResolvedValue([{ name: "Aisha" }]);
-    projectFindMany.mockResolvedValue([{ name: "Rebrand" }]);
+    projectFindMany.mockResolvedValue([{ name: "Rebrand", tasks: [] }]);
 
     const summary = await runCronTick();
 
     expect(summary.digestSent).toBe(true);
     expect(sendWhatsAppMessage).toHaveBeenCalledWith("923001234567", expect.stringContaining("*Daily Digest"));
     const body = sendWhatsAppMessage.mock.calls[0][1] as string;
+    expect(body).toContain("*Overdue*");
     expect(body).toContain("*Personal Tasks*");
     expect(body).toContain("Finish deck");
     expect(body).toContain("*Due within 24h*");
@@ -180,6 +183,80 @@ describe("runCronTick — daily digest content & WhatsApp delivery", () => {
     expect(body).toContain("Aisha");
     expect(body).toContain("*Unassigned Projects*");
     expect(body).toContain("Rebrand");
+  });
+
+  it("lists every overdue task (personal or assigned) in its own section at the top, and excludes them from the other task sections", async () => {
+    mockSettings({
+      daily_digest_time: "00:00",
+      whatsapp_target_type: "number",
+      whatsapp_number: "923001234567",
+    });
+    const pastDeadline = new Date(Date.now() - 60 * 60 * 1000);
+    const soonDeadline = new Date(Date.now() + 60 * 60 * 1000);
+    // gatherDigestData issues 3 separate task.findMany calls (overdue,
+    // personal, due-soon), in that literal order — mocking them positionally
+    // stands in for the real Postgres `where` filtering that actually keeps
+    // these disjoint in production. checkTaskDeadlines' own task.findMany
+    // call (unfiltered, real content irrelevant here) fires first.
+    taskFindMany
+      .mockResolvedValueOnce([]) // checkTaskDeadlines
+      .mockResolvedValueOnce([
+        { title: "Overdue personal thing", deadline: pastDeadline, isPersonal: true, assignees: [] },
+        { title: "Overdue team thing", deadline: pastDeadline, isPersonal: false, assignees: [{ dev: { name: "Bilal" } }] },
+      ]) // gatherDigestData: overdue
+      .mockResolvedValueOnce([{ title: "Upcoming personal thing", deadline: soonDeadline }]) // gatherDigestData: personal
+      .mockResolvedValueOnce([]); // gatherDigestData: due-soon
+
+    await runCronTick();
+
+    const body = sendWhatsAppMessage.mock.calls[0][1] as string;
+    const overdueSection = body.split("*Personal Tasks*")[0];
+    expect(overdueSection).toContain("Overdue personal thing");
+    expect(overdueSection).toContain("Overdue team thing — Bilal");
+    // Overdue items must not also appear in the later Personal Tasks section.
+    const personalSection = body.split("*Personal Tasks*")[1].split("*Due within 24h*")[0];
+    expect(personalSection).not.toContain("Overdue personal thing");
+  });
+
+  it("flags an ACTIVE project as unassigned when it has tasks but none has a dev assignee (personal-only doesn't count)", async () => {
+    mockSettings({
+      daily_digest_time: "00:00",
+      whatsapp_target_type: "number",
+      whatsapp_number: "923001234567",
+    });
+    projectFindMany.mockResolvedValue([
+      { name: "No tasks at all", tasks: [] },
+      { name: "Only personal tasks", tasks: [{ assignees: [] }] },
+      { name: "Has an assigned task", tasks: [{ assignees: [{ devId: "d1" }] }] },
+    ]);
+
+    await runCronTick();
+
+    const body = sendWhatsAppMessage.mock.calls[0][1] as string;
+    const projectsSection = body.split("*Unassigned Projects*")[1];
+    expect(projectsSection).toContain("No tasks at all");
+    expect(projectsSection).toContain("Only personal tasks");
+    expect(projectsSection).not.toContain("Has an assigned task");
+  });
+
+  it("only queries ACTIVE projects for the unassigned-projects section", async () => {
+    mockSettings({ daily_digest_time: "00:00" });
+
+    await runCronTick();
+
+    // Distinguish from checkProjectDeadlines' own project.findMany call (also
+    // in this tick) by its distinctive select shape.
+    const call = projectFindMany.mock.calls.find((c) => (c[0] as { select?: { tasks?: unknown } })?.select?.tasks);
+    expect(call?.[0]).toMatchObject({ where: { status: "ACTIVE" } });
+  });
+
+  it("only counts a dev as unassigned when they have zero currently-open tasks, not zero task history", async () => {
+    mockSettings({ daily_digest_time: "00:00" });
+
+    await runCronTick();
+
+    const call = devFindMany.mock.calls[0][0] as { where: { taskAssignees: unknown } };
+    expect(call.where.taskAssignees).toEqual({ none: { task: { status: { not: "DONE" } } } });
   });
 
   it("sends the WhatsApp digest to the group id when a group is the active target, even if a number is also stored", async () => {

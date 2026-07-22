@@ -113,10 +113,11 @@ function currentHHmm(now: Date): string {
 interface DigestTask {
   title: string;
   deadline: Date;
-  devName: string | null;
+  who: string | null; // dev name, "personal", or null (unassigned team task)
 }
 
 interface DigestData {
+  overdue: DigestTask[];
   personalTasks: DigestTask[];
   dueWithin24h: DigestTask[];
   qaQueue: string[];
@@ -124,21 +125,32 @@ interface DigestData {
   unassignedProjects: string[];
 }
 
-// All open (non-DONE) personal tasks, plus every non-personal task whose
-// deadline falls at or before now+24h — deliberately includes anything
-// already overdue rather than dropping it, so nothing due goes unmentioned
-// just because its window already closed.
+// Overdue (any open task past its deadline, personal or not — surfaced
+// separately, at the top, so nothing slips by) is gathered independently
+// from "Personal Tasks" and "Due within 24h", which then only cover
+// still-on-time work, so nothing is ever listed twice across sections.
 async function gatherDigestData(now: Date): Promise<DigestData> {
   const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const taskSelect = {
+    title: true,
+    deadline: true,
+    isPersonal: true,
+    assignees: { select: { dev: { select: { name: true } } } },
+  } as const;
 
-  const [personalTasks, dueSoonTasks, qaEntries, unassignedDevs, unassignedProjects] = await Promise.all([
+  const [overdueTasks, personalTasks, dueSoonTasks, qaEntries, unassignedDevs, activeProjects] = await Promise.all([
     prisma.task.findMany({
-      where: { status: { not: TaskStatus.DONE }, isPersonal: true },
+      where: { status: { not: TaskStatus.DONE }, deadline: { lt: now } },
+      orderBy: { deadline: "asc" },
+      select: taskSelect,
+    }),
+    prisma.task.findMany({
+      where: { status: { not: TaskStatus.DONE }, isPersonal: true, deadline: { gte: now } },
       orderBy: { deadline: "asc" },
       select: { title: true, deadline: true },
     }),
     prisma.task.findMany({
-      where: { status: { not: TaskStatus.DONE }, isPersonal: false, deadline: { lt: in24h } },
+      where: { status: { not: TaskStatus.DONE }, isPersonal: false, deadline: { gte: now, lt: in24h } },
       orderBy: { deadline: "asc" },
       select: { title: true, deadline: true, assignees: { select: { dev: { select: { name: true } } } } },
     }),
@@ -148,23 +160,39 @@ async function gatherDigestData(now: Date): Promise<DigestData> {
     }),
     // Mehlab is exempt from "no open task" style alerts elsewhere in the app
     // (his own work is tracked as personal tasks, not assignments) — same
-    // exemption applies here so he doesn't see himself listed every day.
+    // exemption applies here so he doesn't see himself listed every day. An
+    // "unassigned" dev is one with zero currently-OPEN assigned tasks, not
+    // zero task history — a dev whose only tasks are already DONE must still
+    // count as unassigned, matching the devs page's idle-glow definition.
     prisma.dev.findMany({
-      where: { taskAssignees: { none: {} }, name: { not: SELF_DEV_NAME } },
+      where: { taskAssignees: { none: { task: { status: { not: TaskStatus.DONE } } } }, name: { not: SELF_DEV_NAME } },
       select: { name: true },
     }),
+    // Matches the dashboard/projects-page "needs attention" definition
+    // (projectService.ts): an ACTIVE project with either no tasks at all, or
+    // no task that has a dev assignee (personal-only tasks don't count —
+    // that's still nobody on the team actively working it).
     prisma.project.findMany({
-      where: { tasks: { none: {} } },
-      select: { name: true },
+      where: { status: ProjectStatus.ACTIVE },
+      select: { name: true, tasks: { select: { assignees: { select: { devId: true } } } } },
     }),
   ]);
 
+  const unassignedProjects = activeProjects.filter(
+    (p) => p.tasks.length === 0 || p.tasks.every((t) => t.assignees.length === 0)
+  );
+
   return {
-    personalTasks: personalTasks.map((t) => ({ title: t.title, deadline: t.deadline, devName: null })),
+    overdue: overdueTasks.map((t) => ({
+      title: t.title,
+      deadline: t.deadline,
+      who: t.isPersonal ? "personal" : (t.assignees[0]?.dev.name ?? null),
+    })),
+    personalTasks: personalTasks.map((t) => ({ title: t.title, deadline: t.deadline, who: null })),
     dueWithin24h: dueSoonTasks.map((t) => ({
       title: t.title,
       deadline: t.deadline,
-      devName: t.assignees[0]?.dev.name ?? null,
+      who: t.assignees[0]?.dev.name ?? null,
     })),
     qaQueue: qaEntries.map((q) => q.task.title),
     unassignedDevs: unassignedDevs.map((d) => d.name),
@@ -176,6 +204,7 @@ async function gatherDigestData(now: Date): Promise<DigestData> {
 // one-line count summary that deep-links into the dashboard for detail.
 function formatPushSummary(data: DigestData): string {
   return [
+    `Overdue: ${data.overdue.length}`,
     `Personal: ${data.personalTasks.length}`,
     `Due within 24h: ${data.dueWithin24h.length}`,
     `QA queue: ${data.qaQueue.length}`,
@@ -184,10 +213,9 @@ function formatPushSummary(data: DigestData): string {
   ].join(" · ");
 }
 
-function formatTaskLine(t: DigestTask, now: Date): string {
-  const who = t.devName ? ` — ${t.devName}` : "";
-  const overdue = t.deadline < now ? " (overdue)" : "";
-  return `- ${t.title}${who} (${formatDeadline(t.deadline)})${overdue}`;
+function formatTaskLine(t: DigestTask): string {
+  const who = t.who ? ` — ${t.who}` : "";
+  return `- ${t.title}${who} (${formatDeadline(t.deadline)})`;
 }
 
 function formatSection(title: string, lines: string[]): string {
@@ -195,12 +223,14 @@ function formatSection(title: string, lines: string[]): string {
 }
 
 // Full itemized version for WhatsApp — the digest's primary readable form,
-// per the app's chat-first design. WhatsApp renders *text* as bold.
-function formatWhatsAppDigest(data: DigestData, dateKey: string, now: Date): string {
+// per the app's chat-first design. WhatsApp renders *text* as bold. Overdue
+// leads so it's the first thing seen.
+function formatWhatsAppDigest(data: DigestData, dateKey: string): string {
   return [
     `*Daily Digest — ${dateKey}*`,
-    formatSection("Personal Tasks", data.personalTasks.map((t) => formatTaskLine(t, now))),
-    formatSection("Due within 24h", data.dueWithin24h.map((t) => formatTaskLine(t, now))),
+    formatSection("Overdue", data.overdue.map(formatTaskLine)),
+    formatSection("Personal Tasks", data.personalTasks.map(formatTaskLine)),
+    formatSection("Due within 24h", data.dueWithin24h.map(formatTaskLine)),
     formatSection("QA Queue", data.qaQueue.map((title) => `- ${title}`)),
     formatSection("Unassigned Devs", data.unassignedDevs.map((name) => `- ${name}`)),
     formatSection("Unassigned Projects", data.unassignedProjects.map((name) => `- ${name}`)),
@@ -228,7 +258,7 @@ async function checkDailyDigest(now: Date): Promise<boolean> {
       const target = await getWhatsAppTarget();
       if (target) {
         try {
-          await sendWhatsAppMessage(target, formatWhatsAppDigest(data, dateKey, now));
+          await sendWhatsAppMessage(target, formatWhatsAppDigest(data, dateKey));
         } catch (err) {
           // The push digest (if enabled) already went out — a WhatsApp
           // delivery failure must not un-send that, and must not block the
@@ -261,7 +291,7 @@ export async function sendTestDigest(): Promise<{ sent: boolean; target: string 
 
   const now = new Date();
   const data = await gatherDigestData(now);
-  await sendWhatsAppMessage(target, formatWhatsAppDigest(data, todayDateKey(now), now));
+  await sendWhatsAppMessage(target, formatWhatsAppDigest(data, todayDateKey(now)));
   return { sent: true, target };
 }
 
