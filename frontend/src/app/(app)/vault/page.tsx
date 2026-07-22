@@ -7,6 +7,7 @@ import { useColdStartBanner } from "@/lib/useColdStartBanner";
 import { apiFetch } from "@/lib/api";
 import { VaultItemDTO } from "@/lib/types";
 import { VaultSecretWidget } from "@/components/VaultSecretWidget";
+import { CreateVaultItemModal } from "@/components/CreateVaultItemModal";
 
 function VaultItemRow({ item, onOpen }: { item: VaultItemDTO; onOpen: () => void }) {
   return (
@@ -44,10 +45,30 @@ function VaultItemDetail({ item, onClose }: { item: VaultItemDTO; onClose: () =>
   const [widgetOpen, setWidgetOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function refetch() {
     queryClient.invalidateQueries({ queryKey: ["vault"] });
+  }
+
+  async function handleDelete() {
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await apiFetch(`/api/vault/${item.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Couldn't delete this entry.");
+      }
+      refetch();
+      onClose();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Couldn't delete this entry.");
+      setDeleteBusy(false);
+    }
   }
 
   async function handleReveal() {
@@ -154,6 +175,27 @@ function VaultItemDetail({ item, onClose }: { item: VaultItemDTO; onClose: () =>
         {uploadError && <p className="text-xs text-blocked">{uploadError}</p>}
       </div>
 
+      <div className="pt-1">
+        {!deleteConfirming ? (
+          <button onClick={() => setDeleteConfirming(true)} className="text-xs text-blocked underline">
+            Delete this entry
+          </button>
+        ) : (
+          <div className="flex flex-col gap-2 rounded-md border border-blocked p-3">
+            <p className="text-xs text-text">Delete "{item.name}" and its stored secret/file for good?</p>
+            {deleteError && <p className="text-xs text-blocked">{deleteError}</p>}
+            <div className="flex items-center gap-2">
+              <button onClick={handleDelete} disabled={deleteBusy} className="text-xs text-blocked font-semibold">
+                {deleteBusy ? "Deleting…" : "Yes, delete"}
+              </button>
+              <button onClick={() => setDeleteConfirming(false)} className="text-xs text-text-muted">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {widgetOpen && (
         <VaultSecretWidget
           vaultItemId={item.id}
@@ -175,6 +217,7 @@ export default function VaultPage() {
   const [tag, setTag] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const vaultQuery = useVaultItems({ q: search || undefined });
   const waking = useColdStartBanner([vaultQuery]);
@@ -201,7 +244,15 @@ export default function VaultPage() {
 
   return (
     <div className="flex-1 p-4">
-      <h1 className="font-heading text-xl text-text mb-3">Vault</h1>
+      <div className="flex items-center justify-between mb-3">
+        <h1 className="font-heading text-xl text-text">Vault</h1>
+        <button
+          onClick={() => setCreating(true)}
+          className="btn-tactile btn-tactile-signal rounded-sm bg-signal text-signal-contrast px-3 py-1.5 text-xs font-semibold"
+        >
+          + Add entry
+        </button>
+      </div>
 
       <div className="flex gap-2 mb-3">
         <input
@@ -262,6 +313,8 @@ export default function VaultPage() {
           )
         )}
       </div>
+
+      {creating && <CreateVaultItemModal onClose={() => setCreating(false)} onCreated={() => setCreating(false)} />}
     </div>
   );
 }

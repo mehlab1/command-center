@@ -27,6 +27,82 @@ vaultRouter.get("/:id", async (req, res) => {
   res.status(200).json(item);
 });
 
+const createMetadataSchema = z.object({
+  name: z.string().min(1),
+  folder: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+});
+
+// Metadata-only create — same rule as the chat tool: no secret value can
+// ever be part of this call (docs/05-vault-and-security.md). A manual
+// "Create" tap is already the user's confirmation, so this goes straight
+// to the service, logged with source: DASHBOARD.
+vaultRouter.post("/", async (req, res) => {
+  const parsed = createMetadataSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "A name is required" });
+    return;
+  }
+  const item = await vaultService.createVaultItemMetadata(parsed.data);
+  await recordAudit({
+    actionType: AuditActionType.CREATE,
+    entityType: "vault_item",
+    entityId: item.id,
+    summary: `Added a vault entry: "${item.name}".`,
+    source: AuditSource.DASHBOARD,
+  });
+  res.status(201).json(await vaultService.getVaultItemMetadata(item.id));
+});
+
+const editMetadataSchema = z.object({
+  name: z.string().min(1).optional(),
+  folder: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+});
+
+vaultRouter.patch("/:id", async (req, res) => {
+  const parsed = editMetadataSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid fields" });
+    return;
+  }
+  const before = await vaultService.getVaultItemMetadata(req.params.id);
+  if (!before) {
+    res.status(404).json({ error: "Vault item not found" });
+    return;
+  }
+  const item = await vaultService.editVaultItemMetadata(req.params.id, parsed.data);
+  const after = await vaultService.getVaultItemMetadata(req.params.id);
+  await recordAudit({
+    actionType: AuditActionType.EDIT,
+    entityType: "vault_item",
+    entityId: item.id,
+    summary: `Edited vault entry "${item.name}".`,
+    diff: { before, after },
+    source: AuditSource.DASHBOARD,
+  });
+  res.status(200).json(after);
+});
+
+vaultRouter.delete("/:id", async (req, res) => {
+  const item = await vaultService.getVaultItemMetadata(req.params.id);
+  if (!item) {
+    res.status(404).json({ error: "Vault item not found" });
+    return;
+  }
+  await vaultService.deleteVaultItem(req.params.id);
+  await recordAudit({
+    actionType: AuditActionType.DELETE,
+    entityType: "vault_item",
+    entityId: req.params.id,
+    summary: `Deleted vault entry "${item.name}".`,
+    source: AuditSource.DASHBOARD,
+  });
+  res.status(200).json({ ok: true });
+});
+
 const secretSchema = z.object({ value: z.string().min(1) });
 
 vaultRouter.post("/:id/secret", async (req, res) => {
