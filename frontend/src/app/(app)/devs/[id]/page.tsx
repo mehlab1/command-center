@@ -31,6 +31,13 @@ export default function DevDetailPage() {
   const pod = podsQuery.data?.find((p) => p.leadDevId === params.id || p.members.some((m) => m.id === params.id));
   const performance = performanceQuery.data?.find((p) => p.devId === params.id);
 
+  const overdueTask = assignedTasks.find((t) => t.status !== "DONE" && new Date(t.deadline) < new Date());
+  const alertMessage = overdueTask
+    ? `Overdue: "${overdueTask.title}"`
+    : dev && dev.openTaskCount === 0
+      ? "Idle — no tasks assigned"
+      : null;
+
   async function handleDelete() {
     setDeleteBusy(true);
     setDeleteError(null);
@@ -76,6 +83,12 @@ export default function DevDetailPage() {
         </h1>
         <span className="text-xs text-text-muted">{dev.employmentType === "PERMANENT" ? "Permanent" : "Intern"}</span>
       </div>
+
+      {alertMessage && (
+        <div className="alert-glow rounded-md border bg-paper p-3">
+          <p className="text-sm text-blocked font-medium">{alertMessage}</p>
+        </div>
+      )}
 
       <div className="rounded-md border border-line bg-paper p-3 flex flex-col gap-2 text-sm">
         {dev.designation && (

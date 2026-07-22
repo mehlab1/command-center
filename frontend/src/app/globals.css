@@ -104,3 +104,22 @@ body {
   text-shadow: 0 0 6px currentColor;
   letter-spacing: 0.04em;
 }
+
+/* Warning-light glow — same phosphor vocabulary as .tag-led, but for a
+   whole card that needs to visually jump out: an idle dev, an overdue
+   task's dev, a project with no/unassigned tasks. Pulses like a physical
+   panel LED, not a decorative animation. */
+@keyframes alert-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--blocked) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 16px 3px color-mix(in srgb, var(--blocked) 55%, transparent);
+  }
+}
+
+.alert-glow {
+  border-color: var(--blocked) !important;
+  animation: alert-pulse 2.2s ease-in-out infinite;
+}
