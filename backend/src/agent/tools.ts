@@ -171,8 +171,25 @@ const WRITE_TOOLS: LlmTool[] = [
     },
   },
   {
+    name: "edit_task",
+    description: "Edit an existing task in place — title, description, notes, deadline, project, or its assignees. This keeps the task's id and history (QA state, ratings, blocked/missed-deadline record) intact; it never deletes and recreates. Use this whenever the user wants to change something about a task that already exists, including reassigning it to different dev(s) or moving it to a different project. Can't be used on a personal task's assignees (a personal task has no dev assignee).",
+    parameters: {
+      type: "object",
+      properties: {
+        task_query: { type: "string" },
+        title: { type: "string" },
+        description: { type: "string" },
+        notes: { type: "string" },
+        deadline: { type: "string", description: "ISO 8601 date" },
+        project_query: { type: "string", description: "Name of the project to move this task into. Pass an empty string to remove it from its current project." },
+        assignee_dev_queries: { type: "array", items: { type: "string" }, description: "Replaces the task's current assignees entirely — up to 2 devs. Omit if assignees aren't changing." },
+      },
+      required: ["task_query"],
+    },
+  },
+  {
     name: "delete_task",
-    description: "Delete a task. There is no edit_task tool — per the golden rule, changing an in-progress task's content is always delete this, then create_task fresh, never an edit.",
+    description: "Delete a task entirely. Use edit_task instead if the user actually wants to change something about it (title/deadline/assignees/project/etc) — this is only for genuinely removing it.",
     parameters: {
       type: "object",
       properties: { task_query: { type: "string" } },
@@ -330,10 +347,10 @@ export const SYSTEM_PROMPT = `You are the agent inside FinovaSolutions Command C
 
 Rules you must follow exactly:
 - Never write to the database yourself. Call the right tool once with the fields you're confident about — the system resolves names, asks for anything missing, confirms in plain language, and writes only after explicit user confirmation. Don't ask "are you sure?" yourself.
-- Changing an existing dev/project/pod (designation, deadline, name, status — anything) is always edit_*/reassign_*, never create_*, even without the word "edit" (e.g. "Ehsan's designation is now Senior Engineer" → edit_dev). Only create_* for something that doesn't exist yet.
+- Changing an existing dev/project/pod/task (designation, deadline, name, status, assignees — anything) is always edit_*/reassign_*, never create_*, even without the word "edit" (e.g. "Ehsan's designation is now Senior Engineer" → edit_dev; "move that task to Umair instead" → edit_task). Only create_* for something that doesn't exist yet.
 - An ambiguous/unclear name (dev, project, pod) — pass it through as-is (e.g. "project_query": "the marketing site"); never invent a fuller/different name.
 - A genuinely missing required field (not a name to resolve, e.g. employment_type) — ask the user directly instead of guessing.
 - Never invent a plausible value (date, number, name, enum like PERMANENT/INTERN) for a field the user didn't state, even if it'd complete the call, even if it's the common answer, even if a nearby item in the same message had that value — omit it, the system will ask. Matters most for dates: a stated deadline never implies a revised_deadline or any other unstated date field.
 - Keep replies short, plain, sentence case — no markdown headers, no bullet walls.
 - A pasted secret/credential/API key never goes in any tool call (including "notes") — tell the user to use the Vault's secure entry widget. Vault metadata (name/folder/tags/notes) goes through create_vault_item_metadata/edit_vault_item_metadata; the secret value itself never touches you or any tool call.
-- No edit_task tool, ever — deliberate. Changing a task's title/deadline/assignees/description is delete_task then fresh create_task; say so plainly. Status changes (blocked/done) go through mark_task_blocked/mark_task_done instead.`;
+- edit_task changes a task in place (title/deadline/assignees/project/description/notes) and preserves its history — never delete_task + create_task for what's really an edit. Status changes (blocked/done) go through mark_task_blocked/mark_task_done instead.`;

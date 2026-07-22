@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTasks } from "@/lib/queries";
 import { useColdStartBanner } from "@/lib/useColdStartBanner";
 import { StatusTag } from "@/components/StatusTag";
+import { EditTaskModal } from "@/components/EditTaskModal";
 import { apiFetch } from "@/lib/api";
 import { formatDeadline } from "@/lib/dateFormat";
 
@@ -125,6 +126,7 @@ export default function TaskDetailPage() {
   const [action, setAction] = useState<"none" | "done" | "blocked">("none");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const task = tasksQuery.data?.find((t) => t.id === params.id);
 
@@ -170,7 +172,15 @@ export default function TaskDetailPage() {
 
       <div className="flex items-start justify-between gap-2">
         <h1 className="font-heading text-xl text-text">{task.title}</h1>
-        <StatusTag kind={task.status} />
+        <div className="flex items-center gap-2">
+          <StatusTag kind={task.status} />
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded-sm border border-line px-2 py-1 text-xs text-text-muted font-heading"
+          >
+            EDIT
+          </button>
+        </div>
       </div>
 
       <div className="rounded-md border border-line bg-paper p-3 flex flex-col gap-2 text-sm">
@@ -282,6 +292,14 @@ export default function TaskDetailPage() {
           </div>
         )}
       </div>
+
+      {editing && (
+        <EditTaskModal
+          task={task}
+          onClose={() => setEditing(false)}
+          onSaved={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }

@@ -12,6 +12,34 @@ export async function getTaskById(id: string) {
   return prisma.task.findUnique({ where: { id }, include: { assignees: true, qaQueueEntry: true } });
 }
 
+// In-place edit — the task keeps its id, so QA history, ratings, audit
+// entries, blockerDescription/missedDeadline, and reminders linked to it all
+// stay intact. Only the fields actually passed are touched; assigneeDevIds,
+// when present, replaces the assignee set atomically (never a delete+recreate
+// of the task row itself).
+export async function editTask(
+  id: string,
+  input: Partial<{
+    title: string;
+    description: string | null;
+    notes: string | null;
+    projectId: string | null;
+    deadline: Date;
+    assigneeDevIds: string[];
+  }>
+): Promise<Task> {
+  const { assigneeDevIds, ...rest } = input;
+  return prisma.task.update({
+    where: { id },
+    data: {
+      ...rest,
+      ...(assigneeDevIds !== undefined
+        ? { assignees: { deleteMany: {}, create: assigneeDevIds.map((devId) => ({ devId })) } }
+        : {}),
+    },
+  });
+}
+
 export async function createTask(input: {
   title: string;
   description?: string;

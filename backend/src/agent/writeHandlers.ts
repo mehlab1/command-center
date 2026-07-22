@@ -381,6 +381,76 @@ export async function prepareCreateTask(args: Record<string, unknown>): Promise<
   };
 }
 
+export async function prepareEditTask(args: Record<string, unknown>): Promise<PrepareResult> {
+  const query = args.task_query as string | undefined;
+  if (!query) return { status: "need_field", message: "Which task do you want to edit?" };
+
+  const resolved = await resolveOrNull(query, "task", "task");
+  if (resolved && "error" in resolved) return { status: "unresolved", message: resolved.error };
+  if (!resolved) return { status: "unresolved", message: "Which task do you want to edit?" };
+
+  const task = await getTaskById(resolved.id);
+  if (!task) return { status: "unresolved", message: "That task no longer exists." };
+
+  const assigneeQueries = Array.isArray(args.assignee_dev_queries)
+    ? (args.assignee_dev_queries as string[]).filter(Boolean)
+    : undefined;
+
+  let assigneeDevIds: string[] | undefined;
+  const assigneeNames: string[] = [];
+  if (assigneeQueries) {
+    if (task.isPersonal) {
+      return { status: "unresolved", message: "That's a personal task — it can't be assigned to a dev." };
+    }
+    assigneeDevIds = [];
+    for (const q of assigneeQueries) {
+      const resolvedDev = await resolveOrNull(q, "dev", "dev");
+      if (resolvedDev && "error" in resolvedDev) return { status: "unresolved", message: resolvedDev.error };
+      if (resolvedDev) {
+        assigneeDevIds.push(resolvedDev.id);
+        assigneeNames.push(resolvedDev.name);
+      }
+    }
+  }
+
+  let projectId: string | null | undefined;
+  if (args.project_query !== undefined) {
+    if (args.project_query === null || args.project_query === "") {
+      projectId = null;
+    } else {
+      const project = await resolveOrNull(args.project_query as string, "project", "project");
+      if (project && "error" in project) return { status: "unresolved", message: project.error };
+      projectId = project?.id;
+    }
+  }
+
+  const changes: string[] = [];
+  if (args.title) changes.push(`title → "${args.title}"`);
+  if (args.deadline) changes.push(`deadline → ${formatDeadline(args.deadline as string)}`);
+  if (args.description) changes.push("description updated");
+  if (args.notes) changes.push("notes updated");
+  if (assigneeDevIds !== undefined) changes.push(`assignees → ${assigneeNames.join(", ") || "none"}`);
+  if (projectId !== undefined) changes.push(projectId ? "project updated" : "project removed");
+
+  if (changes.length === 0) {
+    return { status: "need_field", message: "What would you like to change on that task?" };
+  }
+
+  return {
+    status: "ready",
+    resolvedArgs: {
+      id: resolved.id,
+      title: args.title,
+      description: args.description,
+      notes: args.notes,
+      deadline: args.deadline,
+      projectId,
+      assigneeDevIds,
+    },
+    summary: `Edit task "${resolved.name}": ${changes.join(", ")}.`,
+  };
+}
+
 export async function prepareDeleteTask(args: Record<string, unknown>): Promise<PrepareResult> {
   const query = args.task_query as string | undefined;
   if (!query) return { status: "need_field", message: "Which task do you want to delete?" };
@@ -828,6 +898,7 @@ export const WRITE_PREPARERS: Record<string, (args: Record<string, unknown>) => 
   edit_pod: prepareEditPod,
   reassign_pod_lead: prepareReassignPodLead,
   create_task: prepareCreateTask,
+  edit_task: prepareEditTask,
   delete_task: prepareDeleteTask,
   mark_task_blocked: prepareMarkTaskBlocked,
   mark_task_done: prepareMarkTaskDone,

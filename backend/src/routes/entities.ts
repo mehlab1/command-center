@@ -331,6 +331,52 @@ entitiesRouter.post("/tasks", async (req, res) => {
   res.status(201).json(task);
 });
 
+const editTaskSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  deadline: z.string().optional(),
+  assigneeDevIds: z.array(z.string()).optional(),
+});
+
+// In-place edit — the task keeps its id, so QA state, ratings, and any
+// blocked/missed-deadline history survive untouched. Only the fields
+// actually sent are changed.
+entitiesRouter.patch("/tasks/:id", async (req, res) => {
+  const parsed = editTaskSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid body" });
+    return;
+  }
+  const before = await taskService.getTaskById(req.params.id);
+  if (!before) {
+    res.status(404).json({ error: "Task not found" });
+    return;
+  }
+  if (before.isPersonal && parsed.data.assigneeDevIds && parsed.data.assigneeDevIds.length > 0) {
+    res.status(400).json({ error: "A personal task can't be assigned to a dev." });
+    return;
+  }
+  const task = await taskService.editTask(req.params.id, {
+    title: parsed.data.title,
+    description: parsed.data.description,
+    notes: parsed.data.notes,
+    projectId: parsed.data.projectId,
+    deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
+    assigneeDevIds: parsed.data.assigneeDevIds,
+  });
+  await recordAudit({
+    actionType: AuditActionType.EDIT,
+    entityType: "task",
+    entityId: task.id,
+    summary: `Edit task "${task.title}".`,
+    diff: { before, after: task },
+    source: AuditSource.DASHBOARD,
+  });
+  res.status(200).json(task);
+});
+
 entitiesRouter.delete("/tasks/:id", async (req, res) => {
   const before = await taskService.getTaskById(req.params.id);
   if (!before) {

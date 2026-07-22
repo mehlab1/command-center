@@ -25,8 +25,9 @@ Design one tool per entity-action pair, e.g.:
 - `create_project`, `edit_project`, `delete_project`
 - `create_dev`, `edit_dev`, `delete_dev`, `reassign_dev_pod`
 - `create_pod`, `edit_pod`, `reassign_pod_lead`
-- `create_task`, `delete_task` (no `edit_task` — in-progress tasks are never edited, see
-  golden rule; "editing" a task from the user's perspective is delete+recreate)
+- `create_task`, `edit_task`, `delete_task` (`edit_task` updates the task row in place — title,
+  deadline, description, notes, project, assignees — and keeps its id, so QA state, ratings,
+  and blocked/missed-deadline history all survive the edit)
 - `mark_task_blocked` (requires both `blocker_description` and `revised_deadline` in the same
   call — reject at the tool layer if either is missing)
 - `mark_task_done` (triggers the deadline-miss hybrid check — see `docs/04-workflows.md`)

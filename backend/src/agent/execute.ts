@@ -197,6 +197,28 @@ export async function executeWrite(
       return { entityType: "task", entityId: task.id };
     }
 
+    case "edit_task": {
+      const id = args.id as string;
+      const before = await taskService.getTaskById(id);
+      const task = await taskService.editTask(id, {
+        title: args.title as string | undefined,
+        description: args.description as string | undefined,
+        notes: args.notes as string | undefined,
+        projectId: args.projectId as string | null | undefined,
+        deadline: args.deadline ? new Date(args.deadline as string) : undefined,
+        assigneeDevIds: args.assigneeDevIds as string[] | undefined,
+      });
+      await recordAudit({
+        actionType: AuditActionType.EDIT,
+        entityType: "task",
+        entityId: task.id,
+        summary,
+        diff: { before, after: task },
+        source: AuditSource.CHAT,
+      });
+      return { entityType: "task", entityId: task.id };
+    }
+
     case "delete_task": {
       const id = args.id as string;
       const task = await taskService.deleteTask(id);
