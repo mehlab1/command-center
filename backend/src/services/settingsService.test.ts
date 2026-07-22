@@ -12,6 +12,8 @@ import {
   isValidCountryCode,
   isValidGroupId,
   getWhatsAppNumberParts,
+  getDigestPushEnabled,
+  getDigestWhatsAppEnabled,
 } from "./settingsService";
 
 describe("isValidWhatsAppNumber", () => {
@@ -102,5 +104,32 @@ describe("getWhatsAppNumberParts", () => {
   it("never surfaces a legacy group id (stored pre-migration in whatsapp_number) as a phone number", async () => {
     mockSettings({ whatsapp_number: "120363431258900489@g.us" });
     expect(await getWhatsAppNumberParts()).toEqual({ countryCode: "92", localNumber: "" });
+  });
+});
+
+describe("getDigestPushEnabled / getDigestWhatsAppEnabled", () => {
+  function mockSettings(overrides: Record<string, string>) {
+    settingFindUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
+      const value = overrides[where.key];
+      return value !== undefined ? { value } : null;
+    });
+  }
+
+  it("default to enabled when unset — existing installs keep today's behavior", async () => {
+    mockSettings({});
+    expect(await getDigestPushEnabled()).toBe(true);
+    expect(await getDigestWhatsAppEnabled()).toBe(true);
+  });
+
+  it("can be independently turned off", async () => {
+    mockSettings({ digest_push_enabled: "false", digest_whatsapp_enabled: "true" });
+    expect(await getDigestPushEnabled()).toBe(false);
+    expect(await getDigestWhatsAppEnabled()).toBe(true);
+  });
+
+  it("both can be turned off at once", async () => {
+    mockSettings({ digest_push_enabled: "false", digest_whatsapp_enabled: "false" });
+    expect(await getDigestPushEnabled()).toBe(false);
+    expect(await getDigestWhatsAppEnabled()).toBe(false);
   });
 });

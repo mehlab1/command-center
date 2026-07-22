@@ -239,4 +239,72 @@ describe("sendTestDigest", () => {
     expect(notificationLogCreate).not.toHaveBeenCalled();
     expect(notificationLogFindUnique).not.toHaveBeenCalled();
   });
+
+  it("does not send when WhatsApp digest delivery is turned off, even with a target configured", async () => {
+    mockSettings({
+      whatsapp_target_type: "group",
+      whatsapp_group_id: "12345@g.us",
+      digest_whatsapp_enabled: "false",
+    });
+
+    const result = await sendTestDigest();
+
+    expect(result).toEqual({ sent: false, target: null });
+    expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("runCronTick — digest channel toggles", () => {
+  function mockSettings(overrides: Record<string, string>) {
+    settingFindUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
+      const value = overrides[where.key];
+      return value !== undefined ? { value } : null;
+    });
+  }
+
+  it("sends only WhatsApp when push is disabled", async () => {
+    mockSettings({
+      daily_digest_time: "00:00",
+      digest_push_enabled: "false",
+      whatsapp_target_type: "number",
+      whatsapp_number: "923001234567",
+    });
+
+    const summary = await runCronTick();
+
+    expect(summary.digestSent).toBe(true);
+    expect(sendPushToAllDevices).not.toHaveBeenCalledWith(expect.objectContaining({ title: "Daily digest" }));
+    expect(sendWhatsAppMessage).toHaveBeenCalledWith("923001234567", expect.any(String));
+  });
+
+  it("sends only push when WhatsApp is disabled, even with a target configured", async () => {
+    mockSettings({
+      daily_digest_time: "00:00",
+      digest_whatsapp_enabled: "false",
+      whatsapp_target_type: "number",
+      whatsapp_number: "923001234567",
+    });
+
+    const summary = await runCronTick();
+
+    expect(summary.digestSent).toBe(true);
+    expect(sendPushToAllDevices).toHaveBeenCalledWith(expect.objectContaining({ title: "Daily digest" }));
+    expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing and does not claim the dedup slot when both channels are disabled", async () => {
+    mockSettings({
+      daily_digest_time: "00:00",
+      digest_push_enabled: "false",
+      digest_whatsapp_enabled: "false",
+      whatsapp_target_type: "number",
+      whatsapp_number: "923001234567",
+    });
+
+    const summary = await runCronTick();
+
+    expect(summary.digestSent).toBe(false);
+    expect(sendPushToAllDevices).not.toHaveBeenCalledWith(expect.objectContaining({ title: "Daily digest" }));
+    expect(sendWhatsAppMessage).not.toHaveBeenCalled();
+  });
 });

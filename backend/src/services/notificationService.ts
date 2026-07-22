@@ -2,7 +2,7 @@ import { Prisma, TaskStatus, ProjectStatus, QaStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { sendPushToAllDevices } from "./pushService";
 import { sendWhatsAppMessage } from "../lib/greenApi";
-import { getDailyDigestTime, getWhatsAppTarget } from "./settingsService";
+import { getDailyDigestTime, getWhatsAppTarget, getDigestPushEnabled, getDigestWhatsAppEnabled } from "./settingsService";
 import { formatDeadline } from "../lib/dateFormat";
 import { SELF_DEV_NAME } from "./devService";
 import * as reminderService from "./reminderService";
@@ -214,19 +214,28 @@ async function checkDailyDigest(now: Date): Promise<boolean> {
   const dateKey = todayDateKey(now);
   if (await alreadyClaimed("digest", "daily", dateKey)) return false;
 
+  const [pushEnabled, whatsappEnabled] = await Promise.all([getDigestPushEnabled(), getDigestWhatsAppEnabled()]);
+  if (!pushEnabled && !whatsappEnabled) return false; // "none" selected — nothing to send or claim
+
   try {
     const data = await gatherDigestData(now);
-    await sendPushToAllDevices({ title: "Daily digest", body: formatPushSummary(data), url: "/dashboard" });
 
-    const target = await getWhatsAppTarget();
-    if (target) {
-      try {
-        await sendWhatsAppMessage(target, formatWhatsAppDigest(data, dateKey, now));
-      } catch (err) {
-        // The push digest already went out — a WhatsApp delivery failure
-        // must not un-send that, and must not block the claim below (that
-        // would retry the whole digest next tick and double-send the push).
-        console.error("Failed to send WhatsApp daily digest:", err);
+    if (pushEnabled) {
+      await sendPushToAllDevices({ title: "Daily digest", body: formatPushSummary(data), url: "/dashboard" });
+    }
+
+    if (whatsappEnabled) {
+      const target = await getWhatsAppTarget();
+      if (target) {
+        try {
+          await sendWhatsAppMessage(target, formatWhatsAppDigest(data, dateKey, now));
+        } catch (err) {
+          // The push digest (if enabled) already went out — a WhatsApp
+          // delivery failure must not un-send that, and must not block the
+          // claim below (that would retry the whole digest next tick and
+          // double-send the push).
+          console.error("Failed to send WhatsApp daily digest:", err);
+        }
       }
     }
   } catch (err) {
@@ -241,8 +250,12 @@ async function checkDailyDigest(now: Date): Promise<boolean> {
 // digest content over WhatsApp right now, bypassing the scheduled-time check
 // and the once-per-day dedup claim, so verifying a WhatsApp target actually
 // works doesn't require waiting for the real digest time or burning that
-// day's real send.
+// day's real send. Still respects the WhatsApp on/off toggle — if Mehlab has
+// turned WhatsApp digest delivery off, a "test" send shouldn't go out anyway.
 export async function sendTestDigest(): Promise<{ sent: boolean; target: string | null }> {
+  const whatsappEnabled = await getDigestWhatsAppEnabled();
+  if (!whatsappEnabled) return { sent: false, target: null };
+
   const target = await getWhatsAppTarget();
   if (!target) return { sent: false, target: null };
 

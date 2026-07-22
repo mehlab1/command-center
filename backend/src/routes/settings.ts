@@ -10,12 +10,16 @@ import {
   WHATSAPP_TARGET_TYPE_KEY,
   WHATSAPP_GROUP_ID_KEY,
   WHATSAPP_GROUP_NAME_KEY,
+  DIGEST_PUSH_ENABLED_KEY,
+  DIGEST_WHATSAPP_ENABLED_KEY,
   getDailyDigestTime,
   getWhatsAppNumber,
   getWhatsAppNumberParts,
   getWhatsAppTargetType,
   getWhatsAppGroupId,
   getWhatsAppGroupName,
+  getDigestPushEnabled,
+  getDigestWhatsAppEnabled,
   isValidDigestTime,
   isValidWhatsAppNumber,
   isValidCountryCode,
@@ -29,7 +33,7 @@ export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
 
 async function currentSettingsPayload() {
-  const [dailyDigestTime, targetType, { countryCode, localNumber }, groupId, groupName, rawNumber] =
+  const [dailyDigestTime, targetType, { countryCode, localNumber }, groupId, groupName, rawNumber, pushEnabled, whatsappEnabled] =
     await Promise.all([
       getDailyDigestTime(),
       getWhatsAppTargetType(),
@@ -37,6 +41,8 @@ async function currentSettingsPayload() {
       getWhatsAppGroupId(),
       getWhatsAppGroupName(),
       getWhatsAppNumber(),
+      getDigestPushEnabled(),
+      getDigestWhatsAppEnabled(),
     ]);
 
   // One-time migration: before groups were a first-class concept, a group id
@@ -61,6 +67,8 @@ async function currentSettingsPayload() {
     whatsappLocalNumber: localNumber,
     whatsappGroupId: groupId,
     whatsappGroupName: groupName,
+    digestPushEnabled: pushEnabled,
+    digestWhatsappEnabled: whatsappEnabled,
   };
 }
 
@@ -90,9 +98,12 @@ settingsRouter.get("/whatsapp-groups/search", async (req, res) => {
 // waiting for the scheduled digest time.
 settingsRouter.post("/whatsapp-test-digest", async (_req, res) => {
   try {
-    const result = await sendTestDigest();
+    const [result, whatsappEnabled] = await Promise.all([sendTestDigest(), getDigestWhatsAppEnabled()]);
     if (!result.sent) {
-      res.status(400).json({ error: "No WhatsApp number or group is configured yet." });
+      const reason = !whatsappEnabled
+        ? "WhatsApp digest delivery is turned off — enable it above first."
+        : "No WhatsApp number or group is configured yet.";
+      res.status(400).json({ error: reason });
       return;
     }
     res.status(200).json(result);
@@ -108,6 +119,8 @@ const patchSchema = z.object({
   whatsappLocalNumber: z.string().optional(),
   whatsappGroupId: z.string().optional(),
   whatsappGroupName: z.string().optional(),
+  digestPushEnabled: z.boolean().optional(),
+  digestWhatsappEnabled: z.boolean().optional(),
 });
 
 settingsRouter.patch("/", async (req, res) => {
@@ -185,6 +198,30 @@ settingsRouter.patch("/", async (req, res) => {
       entityId: WHATSAPP_TARGET_TYPE_KEY,
       summary: `Set the active WhatsApp target to ${body.whatsappTargetType === "group" ? "a group" : "a phone number"}.`,
       diff: { key: WHATSAPP_TARGET_TYPE_KEY, value: body.whatsappTargetType },
+      source: AuditSource.DASHBOARD,
+    });
+  }
+
+  if (body.digestPushEnabled !== undefined) {
+    await setSetting(DIGEST_PUSH_ENABLED_KEY, String(body.digestPushEnabled));
+    await recordAudit({
+      actionType: AuditActionType.EDIT,
+      entityType: "setting",
+      entityId: DIGEST_PUSH_ENABLED_KEY,
+      summary: `${body.digestPushEnabled ? "Enabled" : "Disabled"} push delivery for the daily digest.`,
+      diff: { key: DIGEST_PUSH_ENABLED_KEY, value: String(body.digestPushEnabled) },
+      source: AuditSource.DASHBOARD,
+    });
+  }
+
+  if (body.digestWhatsappEnabled !== undefined) {
+    await setSetting(DIGEST_WHATSAPP_ENABLED_KEY, String(body.digestWhatsappEnabled));
+    await recordAudit({
+      actionType: AuditActionType.EDIT,
+      entityType: "setting",
+      entityId: DIGEST_WHATSAPP_ENABLED_KEY,
+      summary: `${body.digestWhatsappEnabled ? "Enabled" : "Disabled"} WhatsApp delivery for the daily digest.`,
+      diff: { key: DIGEST_WHATSAPP_ENABLED_KEY, value: String(body.digestWhatsappEnabled) },
       source: AuditSource.DASHBOARD,
     });
   }

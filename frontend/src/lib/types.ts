@@ -112,6 +112,8 @@ export interface SettingsDTO {
   whatsappLocalNumber: string;
   whatsappGroupId: string | null;
   whatsappGroupName: string | null;
+  digestPushEnabled: boolean;
+  digestWhatsappEnabled: boolean;
 }
 
 export interface WhatsAppGroupMatchDTO {

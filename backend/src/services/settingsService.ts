@@ -6,6 +6,8 @@ export const WHATSAPP_COUNTRY_CODE_KEY = "whatsapp_country_code";
 export const WHATSAPP_TARGET_TYPE_KEY = "whatsapp_target_type";
 export const WHATSAPP_GROUP_ID_KEY = "whatsapp_group_id";
 export const WHATSAPP_GROUP_NAME_KEY = "whatsapp_group_name";
+export const DIGEST_PUSH_ENABLED_KEY = "digest_push_enabled";
+export const DIGEST_WHATSAPP_ENABLED_KEY = "digest_whatsapp_enabled";
 
 const DEFAULT_DIGEST_TIME = "08:00";
 const DEFAULT_COUNTRY_CODE = "92"; // Pakistan — matches the app's single-tenant default timezone/audience
@@ -76,6 +78,17 @@ export async function getWhatsAppNumberParts(): Promise<{ countryCode: string; l
 export async function getWhatsAppTarget(): Promise<string | null> {
   const type = await getWhatsAppTargetType();
   return type === "group" ? getWhatsAppGroupId() : getWhatsAppNumber();
+}
+
+// Both default to enabled (unset key) so existing installs keep their
+// current "push always, WhatsApp if configured" behavior until Mehlab
+// explicitly changes it.
+export async function getDigestPushEnabled(): Promise<boolean> {
+  return (await getSetting(DIGEST_PUSH_ENABLED_KEY)) !== "false";
+}
+
+export async function getDigestWhatsAppEnabled(): Promise<boolean> {
+  return (await getSetting(DIGEST_WHATSAPP_ENABLED_KEY)) !== "false";
 }
 
 const HHMM_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;

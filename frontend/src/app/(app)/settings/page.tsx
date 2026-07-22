@@ -224,6 +224,8 @@ function SettingsForm() {
   const [countryCode, setCountryCode] = useState<string | null>(null);
   const [localNumber, setLocalNumber] = useState<string | null>(null);
   const [resolvedGroup, setResolvedGroup] = useState<{ id: string; name: string } | null>(null);
+  const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
+  const [whatsappEnabled, setWhatsappEnabled] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -234,6 +236,8 @@ function SettingsForm() {
   const targetValue = targetType ?? current?.whatsappTargetType ?? "number";
   const countryValue = countryCode ?? current?.whatsappCountryCode ?? "92";
   const localValue = localNumber ?? current?.whatsappLocalNumber ?? "";
+  const pushValue = pushEnabled ?? current?.digestPushEnabled ?? true;
+  const whatsappValue = whatsappEnabled ?? current?.digestWhatsappEnabled ?? true;
 
   function touch() {
     setSaved(false);
@@ -250,7 +254,12 @@ function SettingsForm() {
     setError(null);
     setSaved(false);
     try {
-      const body: Record<string, string> = { dailyDigestTime: digestValue, whatsappTargetType: targetValue };
+      const body: Record<string, string | boolean> = {
+        dailyDigestTime: digestValue,
+        whatsappTargetType: targetValue,
+        digestPushEnabled: pushValue,
+        digestWhatsappEnabled: whatsappValue,
+      };
       if (targetValue === "number") {
         body.whatsappCountryCode = countryValue;
         body.whatsappLocalNumber = localValue.replace(/\D/g, "");
@@ -304,6 +313,39 @@ function SettingsForm() {
           className="rounded-sm border border-line bg-ink px-3 py-2 text-sm text-text"
         />
       </label>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs text-text-muted">Deliver the digest via</span>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-1.5 text-sm text-text">
+            <input
+              type="checkbox"
+              checked={pushValue}
+              onChange={(e) => {
+                setPushEnabled(e.target.checked);
+                touch();
+              }}
+              className="h-4 w-4 accent-signal"
+            />
+            Push
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-text">
+            <input
+              type="checkbox"
+              checked={whatsappValue}
+              onChange={(e) => {
+                setWhatsappEnabled(e.target.checked);
+                touch();
+              }}
+              className="h-4 w-4 accent-signal"
+            />
+            WhatsApp
+          </label>
+        </div>
+        {!pushValue && !whatsappValue && (
+          <p className="text-xs text-text-muted">Neither is on — the digest won&apos;t be delivered anywhere.</p>
+        )}
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-text-muted">WhatsApp digest &amp; reminders go to</span>
